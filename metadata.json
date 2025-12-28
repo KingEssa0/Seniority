@@ -1,0 +1,8 @@
+{
+  "name": "Seniority",
+  "description": "A simplified, highly accessible social network designed for the elderly to connect, share memories, and find community support with AI-assisted navigation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
