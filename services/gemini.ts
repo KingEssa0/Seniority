@@ -1,141 +1,153 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const LANGUAGE_CODE_TO_NAME: Record<string, string> = {
+  en: "English", es: "Spanish", fr: "French", de: "German", it: "Italian",
+  zh: "Chinese", ur: "Urdu", hi: "Hindi", pa: "Punjabi", nl: "Dutch",
+  ar: "Arabic", pt: "Portuguese"
+};
+
+const getApiKey = () => {
+  const key = process.env.API_KEY;
+  if (!key) {
+    console.warn("Gemini API Key is missing. AI features will be unavailable.");
+  }
+  return key || "";
+};
 
 export async function askAssistant(prompt: string, language: string = 'en') {
+  const apiKey = getApiKey();
+  if (!apiKey) return "I need an API key to help you. Please check your settings.";
+  
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
-        systemInstruction: `You are a warm, patient, and friendly AI assistant for an elderly social media app called Seniority. 
-        Your goal is to help users understand technology, social media trends, or explain complex terms simply. 
-        Keep your tone supportive and avoid technical jargon. 
-        If the language is Arabic or Urdu, ensure you format your response for Right-to-Left readability.
-        Always respond in the requested language: ${language}.`,
+        systemInstruction: `You are a warm, patient AI for 'Seniority', a social app for seniors. Keep it simple and helpful. Language: ${language}.`,
       },
     });
     return response.text;
   } catch (error) {
-    console.error("Assistant Error:", error);
-    return "I'm sorry, I'm having a little trouble connecting right now. Please try again later.";
+    return "I'm having a little trouble connecting. Please try again later.";
   }
 }
 
 export async function teachGameTutorial(gameName: string, language: string) {
+  const apiKey = getApiKey();
+  if (!apiKey) return "Rule book is offline (Missing API Key).";
+
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Explain the basic rules and a winning strategy for ${gameName} in simple terms for an elderly beginner. Use the language: ${language}. Break it into 5 clear steps.`,
+      contents: `Explain how to play ${gameName} simply for an elderly beginner in ${language}. Provide 5 numbered steps.`,
       config: {
-        systemInstruction: "You are a patient grandmaster. Your goal is to make a game sound approachable and fun. Use emojis and clear headings.",
+        systemInstruction: "You are a patient grandmaster. Use emojis. Be extremely clear and encouraging.",
       },
     });
-    return response.text;
+    return response.text || "Sorry, I couldn't find the rules for that game.";
   } catch (error) {
-    return "I couldn't generate the tutorial right now. Maybe we can play together later!";
+    console.error("Tutorial Error:", error);
+    return "I'm having trouble finding the instructions right now. Let's try again in a moment!";
   }
 }
 
-export async function translateContent(text: string, targetLang: string) {
+export async function translateContent(text: string, targetLangCode: string) {
+  const apiKey = getApiKey();
+  if (!apiKey) return text;
+
   try {
+    const ai = new GoogleGenAI({ apiKey });
+    const targetLangName = LANGUAGE_CODE_TO_NAME[targetLangCode] || "English";
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Translate the following text into the native script of ${targetLang}: "${text}"`,
+      contents: `Translate the following to ${targetLangName}: "${text}"`,
       config: {
-        systemInstruction: "You are a professional translator. Provide only the translated text. Do not include quotes or meta-talk.",
+        systemInstruction: "Only return the translated text. Do not provide explanations or quotes.",
       },
     });
-    return response.text;
+    return response.text?.trim() || text;
   } catch (error) {
-    console.error("Translation Error:", error);
     return text;
   }
 }
 
-export async function describeImage(imageUrl: string, language: string) {
+export async function summarizeFeed(posts: any[], language: string) {
+  const apiKey = getApiKey();
+  if (!apiKey) return "I can't read the neighborhood news without my glasses (Missing API Key).";
+
   try {
-    const part = {
-      inlineData: {
-        mimeType: 'image/jpeg',
-        data: imageUrl.split(',')[1] || imageUrl,
+    const ai = new GoogleGenAI({ apiKey });
+    if (!posts || posts.length === 0) return "Nothing new from your friends yet. Why not share a memory of your own?";
+    const textData = posts.map(p => `${p.authorName} shared: ${p.content}`).join('\n');
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Summarize these updates in a heartwarming way for a senior in ${language}: \n${textData}`,
+      config: {
+        systemInstruction: "Start with a friendly greeting. Focus on the positive emotions. Keep it to 3 or 4 sentences max.",
       },
-    };
-    
+    });
+    return response.text || "Your friends are sharing many beautiful memories today!";
+  } catch (error) {
+    console.error("Recap Error:", error);
+    return "I couldn't summarize the feed right now, but your friends are quite active!";
+  }
+}
+
+export async function describeImage(imageUrl: string, language: string) {
+  const apiKey = getApiKey();
+  if (!apiKey) return "I can't see the photo clearly right now (Missing API Key).";
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const base64Data = imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: { 
         parts: [
-          part, 
-          { text: `Describe this photo warmly and clearly for an elderly person in ${language}. Focus on the people, the setting, and the mood.` }
+          { inlineData: { mimeType: 'image/jpeg', data: base64Data } }, 
+          { text: `Describe this photo warmly for an elderly person in ${language}. Focus on people and mood.` }
         ] 
       },
     });
-    return response.text;
+    return response.text || "It's a lovely photo.";
   } catch (error) {
-    console.error("Image Desc Error:", error);
-    return "I can't quite see the details in this photo yet.";
+    return "I can't see the photo clearly right now.";
   }
 }
 
 export async function checkPostSafety(content: string, language: string) {
+  const apiKey = getApiKey();
+  if (!apiKey) return "[SAFE] Standard post.";
+
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Analyze this post for an elderly user. Is it likely a scam, phishing, or dangerous? Explain why briefly in ${language}. Start with [SAFE] or [CAUTION].`,
-      config: {
-        systemInstruction: "You are a cyber-safety expert for seniors. Keep your explanation very simple and calm.",
-      },
+      contents: `Is this post a scam? Explain why in simple ${language}: ${content}`,
+      config: { systemInstruction: "Start with [SAFE] or [CAUTION]." }
     });
-    return response.text;
+    return response.text || "[SAFE] This looks like a regular post.";
   } catch (error) {
-    return "[SAFE] I couldn't scan it completely, but it looks okay.";
+    return "[SAFE] Standard post.";
   }
 }
 
 export async function enhanceStory(briefCaption: string, language: string) {
+  const apiKey = getApiKey();
+  if (!apiKey) return briefCaption;
+
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `The user wrote: "${briefCaption}". Expand this into a heartwarming, nostalgic short story (max 3 sentences) suitable for a senior's social media memory. Use the language: ${language}.`,
-      config: {
-        systemInstruction: "You are a professional storyteller who specializes in senior memories. Your tone is warm, nostalgic, and gentle.",
-      },
+      contents: `Turn this brief caption into a nostalgic, heartwarming short story in ${language}: ${briefCaption}`,
+      config: { systemInstruction: "Maximum 3 sentences. Use gentle language." }
     });
-    return response.text;
+    return response.text || briefCaption;
   } catch (error) {
     return briefCaption;
-  }
-}
-
-export async function summarizeFeed(posts: any[], language: string) {
-  try {
-    const textData = posts.map(p => `${p.author.name} shared: ${p.content}`).join('\n');
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Summarize the following social media feed into a warm "audio recap" for a senior user in ${language}: \n${textData}`,
-      config: {
-        systemInstruction: "Start with a friendly greeting like 'Here is what your friends have been up to.' Focus on positive updates. Keep it concise, around 4 sentences.",
-      },
-    });
-    return response.text;
-  } catch (error) {
-    return "I couldn't get the highlights right now, but your friends are thinking of you!";
-  }
-}
-
-export async function summarizeThread(thread: string, language: string) {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Summarize this conversation briefly for a senior user in ${language}: ${thread}`,
-      config: {
-        systemInstruction: `Keep it simple and focus on the main activity or sentiment. Maximum 2 sentences. Use the language: ${language}.`,
-      },
-    });
-    return response.text;
-  } catch (error) {
-    return "Could not summarize.";
   }
 }

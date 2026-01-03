@@ -1,9 +1,12 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { 
-  getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, 
-  updateDoc, doc, arrayUnion, arrayRemove, getDoc, setDoc, where, limit, 
-  enableIndexedDbPersistence, collectionGroup 
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, 
+  updateDoc, doc, arrayUnion, arrayRemove, getDoc, getDocs, setDoc, where, limit, 
+  collectionGroup, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { 
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut 
@@ -24,21 +27,17 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
 
-// Enable Offline Persistence
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code === 'failed-precondition') {
-    console.warn("Persistence failed: Multiple tabs open");
-  } else if (err.code === 'unimplemented') {
-    console.warn("Persistence failed: Browser doesn't support it");
-  }
+// Initialize Firestore with modern persistent cache settings to avoid deprecation warnings
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
+
+export const storage = getStorage(app);
 
 export { 
   collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, 
-  updateDoc, doc, arrayUnion, arrayRemove, getDoc, setDoc, where, limit,
+  updateDoc, doc, arrayUnion, arrayRemove, getDoc, getDocs, setDoc, where, limit,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
-  ref, uploadString, getDownloadURL, collectionGroup
+  ref, uploadString, getDownloadURL, collectionGroup, deleteDoc
 };

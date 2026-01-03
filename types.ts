@@ -6,6 +6,7 @@ export interface User {
   uid: string;
   name: string;
   avatar: string;
+  phoneNumber: string; // Full number with country code
   location: string;
   bio?: string;
   following?: string[];
@@ -13,13 +14,24 @@ export interface User {
   language?: Language;
 }
 
-export interface Comment {
+export interface GameSession {
   id: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar: string;
-  content: string;
-  createdAt: any;
+  gameId: string;
+  players: string[]; // UIDs
+  status: 'waiting' | 'playing' | 'finished';
+  currentTurn: string; // UID
+  boardState: any[];
+  winner?: string;
+  updatedAt: any;
+}
+
+export interface Circle {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  members: string[];
+  description?: string;
 }
 
 export interface Post {
@@ -33,13 +45,7 @@ export interface Post {
   createdAt: any;
   likes: string[];
   isMemory?: boolean;
-}
-
-export interface Chat {
-  id: string;
-  participants: string[];
-  lastMessage?: string;
-  updatedAt: any;
+  circleId?: string;
 }
 
 export interface Message {

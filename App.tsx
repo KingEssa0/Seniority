@@ -1,86 +1,76 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, Language, Post, User, Message, Game, Chat } from './types';
-import { ICONS, TRANSLATIONS, LANGUAGE_NAMES, IS_RTL } from './constants';
-import { PostCard } from './components/PostCard';
-import { AIAssistant } from './components/AIAssistant';
-import { enhanceStory, summarizeFeed, teachGameTutorial } from './services/gemini';
+import { AppState, Language, Post, User, Message, Game, Circle, GameSession } from './types.ts';
+import { ICONS, TRANSLATIONS, LANGUAGE_NAMES, IS_RTL } from './constants.tsx';
+import { PostCard } from './components/PostCard.tsx';
+import { AIAssistant } from './components/AIAssistant.tsx';
+import { enhanceStory, summarizeFeed, teachGameTutorial } from './services/gemini.ts';
 import { 
   auth, db, storage, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, 
   updateDoc, doc, arrayUnion, arrayRemove, getDoc, setDoc, where, limit,
   onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  ref, uploadString, getDownloadURL
-} from './services/firebase';
+  ref, uploadString, getDownloadURL, getDocs, deleteDoc
+} from './services/firebase.ts';
 
 const GAMES: Game[] = [
-  { id: 'g1', name: 'Chess', icon: '♟️', descriptionKey: 'chessDesc', difficulty: 'Medium' },
-  { id: 'g2', name: 'Checkers', icon: '🔴', descriptionKey: 'checkersDesc', difficulty: 'Easy' },
-  { id: 'g3', name: 'Sudoku', icon: '🔢', descriptionKey: 'sudokuDesc', difficulty: 'Hard' },
-  { id: 'g4', name: 'Crosswords', icon: '🧩', descriptionKey: 'crosswordDesc', difficulty: 'Medium' }
+  { id: 'tictactoe', name: 'Tic Tac Toe', icon: '❌⭕', descriptionKey: 'chessDesc', difficulty: 'Easy' },
+  { id: 'checkers', name: 'Checkers', icon: '🔴', descriptionKey: 'checkersDesc', difficulty: 'Medium' },
 ];
 
-const GOLDEN_CIRCLES = [
-  { id: 'c1', name: 'Green Thumbs', icon: '🌱', color: 'bg-green-100 text-green-700' },
-  { id: 'c2', name: 'Kitchen Masters', icon: '🥧', color: 'bg-amber-100 text-amber-700' },
-  { id: 'c3', name: 'Book Worms', icon: '📚', color: 'bg-blue-100 text-blue-700' },
-  { id: 'c4', name: 'Morning Walkers', icon: '👟', color: 'bg-rose-100 text-rose-700' },
+const COUNTRY_CODES = [
+  { code: '+1', name: 'USA/Canada' },
+  { code: '+44', name: 'UK' },
+  { code: '+92', name: 'Pakistan' },
+  { code: '+91', name: 'India' },
+  { code: '+61', name: 'Australia' },
+  { code: '+34', name: 'Spain' },
+  { code: '+33', name: 'France' },
+  { code: '+49', name: 'Germany' },
+  { code: '+86', name: 'China' },
+  { code: '+52', name: 'Mexico' },
 ];
 
-/**
- * Utility to compress images using Canvas
- */
-const compressImage = (base64: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 1200;
-      let width = img.width;
-      let height = img.height;
-
-      if (width > MAX_WIDTH) {
-        height *= MAX_WIDTH / width;
-        width = MAX_WIDTH;
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-  });
+const censorText = (text: string) => {
+  const badWords = /\b(fuck|nigger|ass|shit|bitch|bastard|dick|pussy|cunt|faggot|kike|retard)\b/gi;
+  return text.replace(badWords, '****');
 };
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [state, setState] = useState<AppState>({
     language: 'en',
     fontSize: 'large',
     highContrast: false,
-    voiceEnabled: false,
+    voiceEnabled: true,
     user: null
   });
 
   const [posts, setPosts] = useState<Post[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'games' | 'settings' | 'profile' | 'messages'>('home');
-  const [selectedChatUser, setSelectedChatUser] = useState<User | null>(null);
+  const [activeGame, setActiveGame] = useState<GameSession | null>(null);
+  
+  const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'games' | 'settings' | 'profile'>('home');
   const [viewingProfile, setViewingProfile] = useState<User | null>(null);
 
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostImage, setNewPostImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [newMessageText, setNewMessageText] = useState('');
+  
   const [authEmail, setAuthEmail] = useState('');
+  const [authPhoneCode, setAuthPhoneCode] = useState('+1');
+  const [authPhone, setAuthPhone] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [authName, setAuthName] = useState('');
   const [isLoginMode, setIsLoginMode] = useState(true);
 
-  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [friendSearchCode, setFriendSearchCode] = useState('+1');
+  const [friendSearchPhone, setFriendSearchPhone] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
   const [showRecap, setShowRecap] = useState(false);
   const [recapText, setRecapText] = useState<string | null>(null);
   const [isGeneratingRecap, setIsGeneratingRecap] = useState(false);
@@ -88,22 +78,29 @@ const App: React.FC = () => {
   const [gameTutorialText, setGameTutorialText] = useState<string | null>(null);
   const [selectedGameName, setSelectedGameName] = useState<string | null>(null);
 
+  // Profile editing states
+  const [isEditingBio, setIsEditingBio] = useState(false);
+  const [editableBio, setEditableBio] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const profilePicRef = useRef<HTMLInputElement>(null);
 
   const t = TRANSLATIONS[state.language] || TRANSLATIONS.en;
   const isRtl = IS_RTL(state.language);
 
-  // Auth Listener
+  // Authentication Observer
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        const userDocRef = doc(db, "users", fbUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          const userData = { id: fbUser.uid, uid: fbUser.uid, ...userDoc.data() } as User;
-          setCurrentUser(userData);
-          setState(prev => ({ ...prev, user: userData, language: userData.language || 'en' }));
+        try {
+          const userDoc = await getDoc(doc(db, "users", fbUser.uid));
+          if (userDoc.exists()) {
+            const userData = { id: fbUser.uid, uid: fbUser.uid, ...userDoc.data() } as User;
+            setCurrentUser(userData);
+            setState(prev => ({ ...prev, user: userData, language: userData.language || 'en' }));
+          }
+        } catch (err) {
+          console.error("Error in auth observer:", err);
         }
       } else {
         setCurrentUser(null);
@@ -111,377 +108,500 @@ const App: React.FC = () => {
       }
       setLoading(false);
     });
-    return unsubscribe;
+    return () => unsubscribe();
   }, []);
 
-  // Real-time Posts
+  // Content Sync
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(30));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
-      setPosts(fetchedPosts);
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(40));
+    return onSnapshot(q, (snapshot) => {
+      const allPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+      setPosts(allPosts);
     });
-    return unsubscribe;
   }, [currentUser]);
 
-  // Real-time Users (Selective)
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(collection(db, "users"), limit(25));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedUsers = snapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() } as User));
-      setUsers(fetchedUsers.filter(u => u.uid !== currentUser.uid));
+    const q = query(collection(db, "users"), limit(50));
+    return onSnapshot(q, (snapshot) => {
+      setUsers(snapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() } as User)));
     });
-    return unsubscribe;
   }, [currentUser]);
 
-  // Real-time Messaging (Subcollection pattern)
   useEffect(() => {
-    if (!currentUser || !selectedChatUser) return;
-    
-    const chatId = [currentUser.uid, selectedChatUser.uid].sort().join('_');
-    const msgRef = collection(db, "chats", chatId, "messages");
-    const q = query(msgRef, orderBy("createdAt", "asc"), limit(100));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
-      setMessages(fetched);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    if (!currentUser) return;
+    const q = query(collection(db, "gameSessions"), where("players", "array-contains", currentUser.uid), where("status", "==", "playing"), limit(1));
+    return onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setActiveGame({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as GameSession);
+      } else {
+        setActiveGame(null);
+      }
     });
-    return unsubscribe;
-  }, [currentUser, selectedChatUser]);
+  }, [currentUser]);
+
+  const speakText = (text: string) => {
+    if (!state.voiceEnabled || !text) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = state.language === 'en' ? 'en-US' : state.language;
+    utterance.rate = 0.85; 
+    window.speechSynthesis.speak(utterance);
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProcessingAuth) return;
+    setIsProcessingAuth(true);
+    
     try {
       if (isLoginMode) {
         await signInWithEmailAndPassword(auth, authEmail, authPassword);
       } else {
-        const res = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-        const newUser = {
+        if (!authPhone) throw new Error("Please enter your phone number.");
+        if (!authName) throw new Error("Please enter your name.");
+        
+        const fullPhone = authPhoneCode + authPhone.replace(/\D/g, '');
+        
+        let res;
+        try {
+          res = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        } catch (authErr: any) {
+          if (authErr.code === 'auth/email-already-in-use') {
+            setIsLoginMode(true);
+            setAuthPassword('');
+            throw new Error("This email is already in use. We've switched you to 'Sign In' so you can log into your account!");
+          }
+          throw authErr;
+        }
+        
+        const newUser: User = {
+          id: res.user.uid,
           uid: res.user.uid,
-          name: authName || "New Senior",
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${authName || res.user.uid}`,
-          location: 'Global Community',
-          bio: 'Connecting generations with wisdom.',
+          name: authName,
+          phoneNumber: fullPhone,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(authName)}`,
+          location: 'Community Member',
+          bio: 'Proud to be a senior. Connecting with wisdom.',
           following: [],
           followers: [],
           language: state.language
         };
+        
         await setDoc(doc(db, "users", res.user.uid), newUser);
+        
+        // Immediate local state update to bypass doc sync delay
+        setCurrentUser(newUser);
+        setState(prev => ({ ...prev, user: newUser }));
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: any) { 
+      alert(err.message); 
+    } finally {
+      setIsProcessingAuth(false);
+    }
+  };
+
+  const handleSearchByPhone = async () => {
+    if (!friendSearchPhone.trim()) return;
+    setIsSearching(true);
+    try {
+      const fullPhone = friendSearchCode + friendSearchPhone.replace(/\D/g, '');
+      const q = query(collection(db, "users"), where("phoneNumber", "==", fullPhone));
+      const snap = await getDocs(q);
+      const res = snap.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() } as User));
+      setSearchResults(res);
+      if (res.length === 0) alert("We couldn't find anyone with that number. Double check the country code!");
+    } catch (err) {
+      alert("Search failed. Please try again.");
+    } finally { 
+      setIsSearching(false); 
     }
   };
 
   const handlePostSubmit = async () => {
-    if ((!newPostContent.trim() && !newPostImage) || !currentUser || isUploading) return;
-    
+    if (!newPostContent.trim() && !newPostImage) return;
     setIsUploading(true);
     let imageUrl = null;
-
     try {
       if (newPostImage) {
-        const compressed = await compressImage(newPostImage);
-        const fileName = `post_${currentUser.uid}_${Date.now()}.jpg`;
-        const storageRef = ref(storage, `posts/${fileName}`);
-        await uploadString(storageRef, compressed, 'data_url');
+        const storageRef = ref(storage, `posts/${currentUser?.uid}_${Date.now()}.jpg`);
+        await uploadString(storageRef, newPostImage, 'data_url');
         imageUrl = await getDownloadURL(storageRef);
       }
-
+      
       await addDoc(collection(db, "posts"), {
-        authorId: currentUser.uid,
-        authorName: currentUser.name,
-        authorAvatar: currentUser.avatar,
-        authorLocation: currentUser.location,
-        content: newPostContent,
+        authorId: currentUser!.uid,
+        authorName: currentUser!.name,
+        authorAvatar: currentUser!.avatar,
+        authorLocation: currentUser!.location,
+        content: censorText(newPostContent),
         image: imageUrl,
         createdAt: serverTimestamp(),
-        likes: [],
-        commentsCount: 0,
-        isMemory: newPostContent.length > 150
+        likes: []
       });
 
       setNewPostContent('');
       setNewPostImage(null);
     } catch (err) {
-      console.error("Upload error:", err);
-      alert("Failed to share post. Please check your connection.");
+      alert("Sharing failed. Check your internet connection.");
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!newMessageText.trim() || !currentUser || !selectedChatUser) return;
-    
-    const chatId = [currentUser.uid, selectedChatUser.uid].sort().join('_');
-    const chatRef = doc(db, "chats", chatId);
-    const msgRef = collection(db, "chats", chatId, "messages");
-
-    try {
-      // Ensure chat metadata exists
-      await setDoc(chatRef, {
-        participants: [currentUser.uid, selectedChatUser.uid],
-        lastMessage: newMessageText,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      await addDoc(msgRef, {
-        senderId: currentUser.uid,
-        text: newMessageText,
-        createdAt: serverTimestamp()
-      });
-
-      setNewMessageText('');
-    } catch (err) {
-      console.error("Message send error:", err);
-    }
-  };
-
-  const handleToggleFollow = async (targetUserId: string) => {
+  const handleToggleFollow = async (targetUid: string) => {
     if (!currentUser) return;
-    const isFollowing = currentUser.following?.includes(targetUserId);
+    const isFollowing = currentUser.following?.includes(targetUid);
     const userRef = doc(db, "users", currentUser.uid);
-    const targetRef = doc(db, "users", targetUserId);
-
     try {
-      if (isFollowing) {
-        await updateDoc(userRef, { following: arrayRemove(targetUserId) });
-        await updateDoc(targetRef, { followers: arrayRemove(currentUser.uid) });
-      } else {
-        await updateDoc(userRef, { following: arrayUnion(targetUserId) });
-        await updateDoc(targetRef, { followers: arrayUnion(currentUser.uid) });
-      }
-      const snap = await getDoc(userRef);
-      if (snap.exists()) {
-        const updated = { id: currentUser.uid, uid: currentUser.uid, ...snap.data() } as User;
-        setCurrentUser(updated);
-      }
-    } catch (err) {
-      console.error("Follow error:", err);
-    }
-  };
-
-  const handleLikePost = async (postId: string, currentLikes: string[]) => {
-    if (!currentUser) return;
-    const postRef = doc(db, "posts", postId);
-    const isLiked = currentLikes.includes(currentUser.uid);
-    try {
-      await updateDoc(postRef, {
-        likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+      await updateDoc(userRef, {
+        following: isFollowing ? arrayRemove(targetUid) : arrayUnion(targetUid)
+      });
+      setCurrentUser(prev => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          following: isFollowing 
+            ? (prev.following || []).filter(id => id !== targetUid)
+            : [...(prev.following || []), targetUid]
+        };
+        setState(s => ({ ...s, user: updated }));
+        return updated;
       });
     } catch (err) {
-      console.error("Like error:", err);
+      alert("Action failed.");
     }
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const startNewGame = async (gameId: string, opponentId: string) => {
+    if (!currentUser) return;
+    const session: Partial<GameSession> = {
+      gameId,
+      players: [currentUser.uid, opponentId],
+      status: 'playing',
+      currentTurn: currentUser.uid,
+      boardState: Array(9).fill(null),
+      updatedAt: serverTimestamp()
+    };
+    try {
+      await addDoc(collection(db, "gameSessions"), session);
+      setActiveTab('games');
+    } catch (err) {
+      alert("Could not start game.");
+    }
+  };
+
+  const handleGameMove = async (index: number) => {
+    if (!activeGame || activeGame.currentTurn !== currentUser!.uid) return;
+    const newBoard = [...activeGame.boardState];
+    if (newBoard[index]) return;
+    newBoard[index] = activeGame.players[0] === currentUser!.uid ? 'X' : 'O';
+    
+    const winPatterns = [
+      [0,1,2],[3,4,5],[6,7,8],
+      [0,3,6],[1,4,7],[2,5,8],
+      [0,4,8],[2,4,6]
+    ];
+    let winner = null;
+    for (const pattern of winPatterns) {
+      const [a,b,c] = pattern;
+      if (newBoard[a] && newBoard[a] === newBoard[b] && newBoard[a] === newBoard[c]) {
+        winner = currentUser!.uid;
+        break;
+      }
+    }
+
+    const isDraw = !winner && newBoard.every(c => c !== null);
+    const opponent = activeGame.players.find(p => p !== currentUser!.uid);
+
+    await updateDoc(doc(db, "gameSessions", activeGame.id), {
+      boardState: newBoard,
+      currentTurn: opponent,
+      status: (winner || isDraw) ? 'finished' : 'playing',
+      winner: winner || (isDraw ? 'draw' : null),
+      updatedAt: serverTimestamp()
+    });
+  };
+
+  const handleProfilePicChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) return alert("Image is too big (Max 10MB)");
-      const reader = new FileReader();
-      reader.onloadend = () => setNewPostImage(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file || !currentUser) return;
+    
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const base64 = reader.result as string;
+        const storageRef = ref(storage, `avatars/${currentUser.uid}.jpg`);
+        await uploadString(storageRef, base64, 'data_url');
+        const url = await getDownloadURL(storageRef);
+        
+        const userRef = doc(db, "users", currentUser.uid);
+        await updateDoc(userRef, { avatar: url });
+        
+        const updatedUser = { ...currentUser, avatar: url };
+        setCurrentUser(updatedUser);
+        setState(prev => ({ ...prev, user: updatedUser }));
+        
+        if (viewingProfile && viewingProfile.uid === currentUser.uid) {
+            setViewingProfile(updatedUser);
+        }
+      } catch (err) {
+        console.error("Profile upload error:", err);
+        alert("Upload failed. Please check your connection.");
+      } finally {
+        setIsUploading(false);
+        e.target.value = ''; // Reset input to allow re-selection
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveBio = async () => {
+    if (!currentUser) return;
+    setIsUploading(true);
+    try {
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, { bio: editableBio });
+      
+      const updatedUser = { ...currentUser, bio: editableBio };
+      setCurrentUser(updatedUser);
+      setState(prev => ({ ...prev, user: updatedUser }));
+      
+      if (viewingProfile && viewingProfile.uid === currentUser.uid) {
+        setViewingProfile(updatedUser);
+      }
+      setIsEditingBio(false);
+    } catch (err) {
+      alert("Failed to save bio.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const handleEnhanceStory = async () => {
-    if (!newPostContent.trim()) return;
-    setIsEnhancing(true);
-    const result = await enhanceStory(newPostContent, state.language);
-    setNewPostContent(result);
-    setIsEnhancing(false);
+  const handleGenerateRecap = async () => {
+    if (isGeneratingRecap) return;
+    setShowRecap(true);
+    setIsGeneratingRecap(true);
+    try {
+      const summary = await summarizeFeed(posts.slice(0, 10), state.language);
+      setRecapText(summary || "No recent updates to share.");
+      if (state.voiceEnabled) speakText(summary || "");
+    } catch (err) {
+      setRecapText("I couldn't get the news right now. Try again shortly!");
+    } finally {
+      setIsGeneratingRecap(false);
+    }
   };
 
   const handleTeachGame = async (gameName: string) => {
     setSelectedGameName(gameName);
     setIsTeachingGame(true);
     setGameTutorialText(null);
-    const tutorial = await teachGameTutorial(gameName, state.language);
-    setGameTutorialText(tutorial || "");
-  };
-
-  const handleGenerateRecap = async () => {
-    setShowRecap(true);
-    setIsGeneratingRecap(true);
-    const recap = await summarizeFeed(posts.slice(0, 5), state.language);
-    setRecapText(recap || "");
-    setIsGeneratingRecap(false);
+    try {
+      const tutorial = await teachGameTutorial(gameName, state.language);
+      setGameTutorialText(tutorial || "I'm sorry, I couldn't find the rules for this game.");
+    } catch (err) {
+      setGameTutorialText("Could not load rules.");
+    }
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-indigo-600 flex items-center justify-center text-white p-6">
-      <div className="text-center">
-        <ICONS.Bot className="w-32 h-32 animate-bounce mx-auto mb-8" />
-        <h1 className="text-5xl font-black">Seniority is waking up...</h1>
-      </div>
+    <div className="h-screen bg-indigo-600 flex flex-col items-center justify-center text-white p-12 text-center">
+      <ICONS.Bot className="w-40 h-40 animate-bounce mb-8 opacity-90" />
+      <h1 className="text-6xl font-black tracking-tighter">Seniority</h1>
+      <p className="text-2xl font-bold mt-4 opacity-75 italic">Waking up the neighborhood...</p>
     </div>
   );
 
   if (!currentUser) return (
-    <div className={`min-h-screen ${state.highContrast ? 'bg-black text-white' : 'bg-indigo-50 text-slate-900'} flex items-center justify-center p-6`}>
-      <div className={`w-full max-w-2xl ${state.highContrast ? 'border-4 border-white' : 'bg-white shadow-2xl'} rounded-[60px] p-12 animate-slide-up`}>
-        <div className="text-center mb-10">
-          <div className={`w-24 h-24 mx-auto mb-6 rounded-3xl flex items-center justify-center ${state.highContrast ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-lg'}`}>
-            <ICONS.Home className="w-16 h-16" />
+    <div className="min-h-screen flex items-center justify-center p-6 bg-indigo-50/30 font-sans">
+      <div className="bg-white w-full max-w-xl p-12 rounded-[60px] shadow-[0_40px_100px_-20px_rgba(79,70,229,0.2)] space-y-10 animate-fade-in border-8 border-white overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-3 bg-indigo-600 shadow-md"></div>
+        <div className="text-center">
+          <div className="w-24 h-24 bg-indigo-600 rounded-[35px] flex items-center justify-center text-white mx-auto mb-6 shadow-2xl shadow-indigo-100">
+             <ICONS.Home className="w-14 h-14" />
           </div>
-          <h1 className="text-6xl font-black tracking-tight mb-2">Seniority</h1>
-          <p className="text-2xl font-medium opacity-60">Wisdom in Connection</p>
+          <h1 className="text-6xl font-black text-indigo-950 tracking-tight">Seniority</h1>
+          <p className="text-xl font-bold text-slate-400 mt-2">The neighborhood social network.</p>
         </div>
-
-        <form onSubmit={handleAuth} className="space-y-8">
+        
+        <form onSubmit={handleAuth} className="space-y-6">
           {!isLoginMode && (
-            <div>
-              <label className="block text-2xl font-black mb-3">Your Full Name</label>
-              <input type="text" value={authName} onChange={e => setAuthName(e.target.value)} required className={`w-full p-8 rounded-3xl text-2xl border-4 ${state.highContrast ? 'bg-black border-white' : 'bg-slate-50 border-transparent focus:border-indigo-500'}`} placeholder="Jane Doe" />
-            </div>
+            <>
+              <div className="space-y-2">
+                <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Full Name</label>
+                <input type="text" placeholder="e.g. Grandma Rose" value={authName} onChange={e=>setAuthName(e.target.value)} className="w-full p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Phone Number</label>
+                <div className="flex space-x-3">
+                  <select value={authPhoneCode} onChange={e=>setAuthPhoneCode(e.target.value)} className="p-6 text-2xl border-4 border-slate-50 rounded-3xl bg-slate-50 font-bold outline-none cursor-pointer hover:border-indigo-100">
+                    {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                  </select>
+                  <input type="tel" placeholder="Your phone number" value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="flex-1 p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
+                </div>
+              </div>
+            </>
           )}
-          <div>
-            <label className="block text-2xl font-black mb-3">Email Address</label>
-            <input type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required className={`w-full p-8 rounded-3xl text-2xl border-4 ${state.highContrast ? 'bg-black border-white' : 'bg-slate-50 border-transparent focus:border-indigo-500'}`} placeholder="email@example.com" />
+          <div className="space-y-2">
+            <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Email Address</label>
+            <input type="email" placeholder="example@email.com" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
           </div>
-          <div>
-            <label className="block text-2xl font-black mb-3">Secret Password</label>
-            <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} required className={`w-full p-8 rounded-3xl text-2xl border-4 ${state.highContrast ? 'bg-black border-white' : 'bg-slate-50 border-transparent focus:border-indigo-500'}`} placeholder="••••••••" />
+          <div className="space-y-2">
+            <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Secret Password</label>
+            <div className="relative">
+              <input type={showPassword ? "text" : "password"} placeholder="••••••••" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} className="w-full p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
+              <button type="button" onClick={()=>setShowPassword(!showPassword)} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 hover:text-indigo-600 transition-colors p-2">
+                {showPassword ? <ICONS.EyeOff className="w-10 h-10" /> : <ICONS.Eye className="w-10 h-10" />}
+              </button>
+            </div>
           </div>
-          <button type="submit" className={`w-full py-8 rounded-3xl text-3xl font-black transition-all active-scale ${state.highContrast ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-xl shadow-indigo-200'}`}>
-            {isLoginMode ? 'Sign In' : 'Join Community'}
+          <button type="submit" disabled={isProcessingAuth} className={`w-full py-8 ${isProcessingAuth ? 'bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100'} text-white text-3xl font-black rounded-[35px] transition-all active-scale flex items-center justify-center space-x-4`}>
+            {isProcessingAuth ? (
+              <div className="w-10 h-10 border-8 border-white/30 border-t-white rounded-full animate-spin"></div>
+            ) : (isLoginMode ? 'Sign In' : 'Sign Up')}
           </button>
         </form>
-
-        <button onClick={() => setIsLoginMode(!isLoginMode)} className="w-full mt-10 text-2xl font-black opacity-60 hover:opacity-100 transition-opacity underline decoration-2">
-          {isLoginMode ? "New here? Join the family!" : "Already a member? Sign in!"}
+        
+        <button onClick={()=>{setIsLoginMode(!isLoginMode); setAuthPassword('');}} className="w-full text-2xl font-black text-slate-400 hover:text-indigo-600 transition-all underline decoration-4 underline-offset-8 decoration-slate-100 hover:decoration-indigo-100">
+          {isLoginMode ? "New here? Come and join us!" : "Already a member? Sign in instead"}
         </button>
       </div>
     </div>
   );
 
-  const accentColor = state.highContrast ? 'text-yellow-400' : 'text-indigo-600';
-  const accentBg = state.highContrast ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-xl shadow-indigo-100';
-
   return (
-    <div className={`min-h-screen ${state.highContrast ? 'bg-black' : 'bg-slate-50'} flex flex-col transition-all duration-300 font-sans`} dir={isRtl ? 'rtl' : 'ltr'}>
-      <header className={`fixed top-0 left-0 right-0 ${state.highContrast ? 'bg-black border-white' : 'bg-white/90 backdrop-blur-2xl border-indigo-100/50'} z-40 pt-safe border-b`}>
-        <div className="max-w-4xl mx-auto px-6 h-20 md:h-24 flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer active-scale" onClick={() => setActiveTab('home')}>
-             <div className={`w-12 h-12 ${state.highContrast ? 'bg-white text-black' : 'bg-indigo-600 text-white'} rounded-2xl flex items-center justify-center shadow-md`}>
-               <ICONS.Home className="w-8 h-8" />
-             </div>
-             <span className={`text-2xl md:text-3xl font-black ${state.highContrast ? 'text-yellow-400' : 'text-slate-900'} tracking-tight`}>Seniority</span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <button onClick={handleGenerateRecap} className={`p-4 rounded-2xl ${state.highContrast ? 'text-yellow-400 bg-gray-900 border border-white' : 'text-indigo-600 bg-indigo-50'} active-scale flex items-center space-x-2`}>
-              <ICONS.Radio className="w-8 h-8" />
-              <span className="hidden sm:inline font-black text-xs uppercase">{t.audioRecap}</span>
-            </button>
-            <button onClick={() => { setViewingProfile(currentUser); setActiveTab('profile'); }} className="active-scale">
-              <img src={currentUser.avatar} className={`w-14 h-14 rounded-full ring-4 ${state.highContrast ? 'ring-yellow-400' : 'ring-indigo-100'} shadow-md`} alt="Profile" />
-            </button>
-          </div>
+    <div className={`min-h-screen ${state.highContrast ? 'bg-black text-white' : 'bg-slate-50 text-slate-900'} pb-40 transition-colors duration-500`}>
+      <header className="fixed top-0 inset-x-0 h-24 bg-white/95 backdrop-blur-3xl border-b border-indigo-50 flex items-center justify-between px-8 z-50 shadow-sm">
+        <div className="flex items-center space-x-4 cursor-pointer active-scale" onClick={()=>setActiveTab('home')}>
+          <div className="bg-indigo-600 p-3 rounded-[20px] text-white shadow-xl shadow-indigo-100"><ICONS.Home className="w-10 h-10" /></div>
+          <span className="text-4xl font-black tracking-tight text-indigo-950">Seniority</span>
+        </div>
+        <div className="flex items-center space-x-6">
+          <button onClick={handleGenerateRecap} className="group flex items-center bg-white text-indigo-600 px-6 py-4 rounded-[25px] font-black text-xl space-x-3 active-scale shadow-sm border-4 border-indigo-50 hover:border-indigo-100 transition-all">
+            <ICONS.Radio className={`w-8 h-8 ${isGeneratingRecap ? 'animate-pulse' : ''}`} />
+            <span className="hidden sm:inline">Daily Digest</span>
+          </button>
+          <img src={currentUser.avatar} onClick={()=>{setViewingProfile(currentUser); setActiveTab('profile')}} className="w-16 h-16 rounded-2xl border-4 border-white shadow-2xl cursor-pointer active-scale ring-4 ring-indigo-50/50 object-cover" alt="Profile" />
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 pt-28 md:pt-36 pb-40">
+      <main className="max-w-4xl mx-auto pt-32 px-6">
         {activeTab === 'home' && (
-          <div className="space-y-10 animate-slide-up">
-            <section className="overflow-x-auto pb-4 hide-scrollbar">
-              <div className="flex space-x-4 min-w-max px-2">
-                 {GOLDEN_CIRCLES.map(circle => (
-                   <button key={circle.id} className={`${state.highContrast ? 'bg-black border-2 border-white text-white' : circle.color} px-8 py-5 rounded-[30px] flex items-center space-x-4 shadow-sm active-scale transition-all`}>
-                     <span className="text-4xl">{circle.icon}</span>
-                     <span className="font-black text-2xl whitespace-nowrap">{circle.name}</span>
-                   </button>
-                 ))}
-              </div>
-            </section>
-            
-            <div className={`rounded-[50px] p-12 ${state.highContrast ? 'bg-black border-4 border-white text-white' : 'bg-gradient-to-br from-indigo-600 to-indigo-900 text-white shadow-2xl'} relative overflow-hidden`}>
-               <h1 className="text-5xl md:text-7xl font-black mb-4 leading-tight">Welcome home, {currentUser.name}!</h1>
-               <p className="text-3xl font-medium opacity-90 italic">"{t.inspiration}"</p>
-            </div>
-
-            <div className={`${state.highContrast ? 'bg-black border-4 border-white text-white' : 'bg-white border-white shadow-2xl'} rounded-[50px] p-12 flex flex-col space-y-8 relative overflow-hidden`}>
-              {(isEnhancing || isUploading) && (
-                <div className="absolute inset-0 bg-white/70 backdrop-blur-md z-20 flex flex-col items-center justify-center animate-fade-in">
-                  <div className="animate-bounce mb-6"><ICONS.Bot className="w-20 h-20 text-indigo-600" /></div>
-                  <p className="text-3xl font-black text-indigo-800 tracking-tight">{isUploading ? 'Sending your memory...' : 'Writing your story...'}</p>
-                </div>
-              )}
+          <div className="space-y-12 animate-slide-up">
+            <div className="p-12 rounded-[60px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.06)] space-y-8 border-4 border-white bg-white relative group transition-all duration-500">
               <div className="flex items-start space-x-6">
-                <img src={currentUser.avatar} className="w-20 h-20 rounded-3xl shadow-lg border-4 border-white" alt="" />
+                <img src={currentUser.avatar} className="w-24 h-24 rounded-[30px] shadow-xl border-4 border-indigo-50 object-cover" alt="Me" />
                 <textarea 
-                  value={newPostContent} 
-                  onChange={e => setNewPostContent(e.target.value)} 
                   placeholder={t.share} 
-                  className={`flex-1 text-3xl md:text-4xl border-none focus:ring-0 resize-none py-3 bg-transparent min-h-[160px] font-medium leading-relaxed ${state.highContrast ? 'text-white' : 'text-slate-900'}`} 
+                  value={newPostContent} 
+                  onChange={e=>setNewPostContent(e.target.value)} 
+                  className="flex-1 p-4 text-4xl border-none focus:ring-0 min-h-[180px] outline-none font-medium resize-none bg-transparent transition-colors text-slate-800 placeholder-slate-200" 
                 />
               </div>
-              
               {newPostImage && (
-                <div className="relative rounded-[40px] overflow-hidden border-8 border-white shadow-xl max-h-[400px]">
-                  <img src={newPostImage} alt="Post preview" className="w-full h-full object-cover" />
-                  <button onClick={() => setNewPostImage(null)} className="absolute top-6 right-6 p-4 bg-black/60 text-white rounded-full">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="3"/></svg>
-                  </button>
+                <div className="relative group/img overflow-hidden rounded-[45px] border-8 border-slate-50 shadow-2xl">
+                  <img src={newPostImage} className="w-full max-h-[600px] object-cover" alt="Shared" />
+                  <button onClick={()=>setNewPostImage(null)} className="absolute top-6 right-6 bg-black/60 text-white p-5 rounded-full backdrop-blur-md transition-all shadow-xl active-scale border-4 border-white/20"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="4"/></svg></button>
                 </div>
               )}
-
-              <div className="flex justify-between items-center pt-10 border-t-4 border-slate-50">
-                <div className="flex items-center space-x-6">
-                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageChange} />
-                  <button onClick={() => fileInputRef.current?.click()} className={`p-5 rounded-3xl bg-slate-50 ${accentColor} active-scale shadow-sm`}><ICONS.ImagePlus className="w-10 h-10" /></button>
-                  {newPostContent.length > 5 && (
-                    <button onClick={handleEnhanceStory} className={`flex items-center space-x-4 px-8 py-5 rounded-3xl bg-amber-50 text-amber-700 font-black text-2xl active-scale shadow-sm`}>
-                      <ICONS.PenLine className="w-10 h-10" />
-                      <span className="hidden sm:inline">{t.enhance}</span>
-                    </button>
-                  )}
+              <div className="flex justify-between items-center border-t-8 border-slate-50 pt-10 transition-colors">
+                <div className="flex space-x-6">
+                  <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={e=>{
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      setNewPostImage(reader.result as string);
+                      e.target.value = ''; // Reset input to allow re-selection
+                    };
+                    reader.readAsDataURL(file);
+                  }} />
+                  <button onClick={()=>fileInputRef.current?.click()} className="p-8 rounded-[30px] active-scale shadow-inner transition-all border-4 border-transparent bg-slate-50 text-indigo-600"><ICONS.ImagePlus className="w-12 h-12" /></button>
                 </div>
-                <button onClick={handlePostSubmit} disabled={(!newPostContent.trim() && !newPostImage) || isUploading} className={`px-16 py-7 rounded-[30px] font-black text-3xl shadow-xl transition-all active-scale ${newPostContent.trim() || newPostImage ? accentBg : 'bg-slate-100 text-slate-400'}`}>{t.post}</button>
+                <button 
+                  onClick={handlePostSubmit} 
+                  disabled={(!newPostContent.trim() && !newPostImage) || isUploading} 
+                  className="px-20 py-7 text-white text-4xl font-black rounded-[35px] shadow-2xl transition-all bg-indigo-600 shadow-indigo-200"
+                >
+                  {isUploading ? <div className="w-10 h-10 border-8 border-white/30 border-t-white rounded-full animate-spin"></div> : "Share"}
+                </button>
               </div>
             </div>
 
-            <div className="space-y-10">
+            <div className="space-y-16">
               {posts.map(post => (
                 <PostCard 
                   key={post.id} 
                   post={post} 
                   userLanguage={state.language} 
-                  highContrast={state.highContrast} 
                   currentUserId={currentUser.uid} 
-                  onLike={() => handleLikePost(post.id, post.likes)} 
-                  onAvatarClick={() => { 
+                  onAvatarClick={()=>{
                     const found = users.find(u => u.uid === post.authorId);
-                    setViewingProfile(found || (post.authorId === currentUser.uid ? currentUser : null)); 
-                    setActiveTab('profile'); 
+                    setViewingProfile(found || null);
+                    setActiveTab('profile');
+                  }} 
+                  onLike={async ()=>{
+                    const isLiked = post.likes.includes(currentUser.uid);
+                    const postRef = doc(db, "posts", post.id);
+                    await updateDoc(postRef, { likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid) });
                   }} 
                 />
               ))}
+              {posts.length === 0 && (
+                <div className="text-center py-40 space-y-8 opacity-25">
+                  <ICONS.Smile className="w-48 h-48 mx-auto" />
+                  <p className="text-5xl font-black">Waiting for the neighborhood news...</p>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {activeTab === 'friends' && (
           <div className="space-y-12 animate-slide-up">
-            <h1 className="text-6xl font-black px-2">{t.friends}</h1>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-              {users.map(u => (
-                <div key={u.id} className={`${state.highContrast ? 'bg-black border-4 border-white text-white' : 'bg-white shadow-2xl border-white'} p-10 rounded-[60px] flex flex-col sm:flex-row items-center space-y-6 sm:space-y-0 sm:space-x-8 transition-transform hover:scale-[1.02]`}>
-                  <img src={u.avatar} className="w-32 h-32 rounded-[40px] shadow-xl border-4 border-white cursor-pointer" alt="" onClick={() => { setViewingProfile(u); setActiveTab('profile'); }} />
-                  <div className="flex-1 text-center sm:text-left cursor-pointer" onClick={() => { setViewingProfile(u); setActiveTab('profile'); }}>
-                    <h3 className="text-4xl font-black mb-1">{u.name}</h3>
-                    <p className="text-2xl opacity-60 font-bold">{u.location}</p>
+            <h1 className="text-6xl font-black tracking-tight flex items-center space-x-6">
+              <span>Community Members</span>
+              <div className="h-1.5 bg-indigo-600 flex-1 rounded-full opacity-10"></div>
+            </h1>
+            <div className="bg-white p-12 rounded-[60px] shadow-2xl space-y-8 border-8 border-white">
+              <h2 className="text-3xl font-black text-indigo-950 ml-2">Find someone by phone</h2>
+              <div className="flex space-x-6">
+                <select value={friendSearchCode} onChange={e=>setFriendSearchCode(e.target.value)} className="p-8 text-3xl border-4 border-slate-50 rounded-[35px] bg-slate-50 font-black outline-none cursor-pointer hover:border-indigo-100">
+                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                </select>
+                <input 
+                  type="tel" 
+                  placeholder="123 4567" 
+                  value={friendSearchPhone} 
+                  onChange={e=>setFriendSearchPhone(e.target.value)} 
+                  onKeyDown={e=>e.key === 'Enter' && handleSearchByPhone()}
+                  className="flex-1 p-8 text-4xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-500 rounded-[35px] outline-none transition-all font-black placeholder-slate-200" 
+                />
+                <button onClick={handleSearchByPhone} className="p-10 bg-indigo-600 text-white rounded-[40px] active-scale shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all"><ICONS.Search className="w-12 h-12" /></button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              {(searchResults.length > 0 ? searchResults : users).filter(u=>u.uid!==currentUser.uid).map(u => (
+                <div key={u.id} className="bg-white p-12 rounded-[65px] shadow-xl flex flex-col items-center text-center space-y-8 border-4 border-white hover:border-indigo-100 transition-all group relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
+                  <div className="relative z-10">
+                    <img src={u.avatar} className="w-40 h-40 rounded-[45px] border-8 border-white shadow-2xl group-hover:scale-105 transition-transform duration-500 object-cover bg-slate-50" alt={u.name} />
+                    {currentUser.following?.includes(u.uid) && <div className="absolute -top-4 -right-4 bg-green-500 text-white p-3 rounded-full border-4 border-white shadow-xl animate-bounce"><ICONS.UserCheck className="w-8 h-8" /></div>}
                   </div>
-                  <div className="flex space-x-4">
-                    <button onClick={() => { setSelectedChatUser(u); setActiveTab('messages'); }} className="p-6 bg-indigo-50 text-indigo-600 rounded-3xl active-scale shadow-sm">
-                      <ICONS.MessageCircle className="w-10 h-10" />
+                  <div className="flex-1 z-10">
+                    <h3 className="text-5xl font-black leading-tight text-indigo-950">{u.name}</h3>
+                    <p className="text-3xl font-bold text-indigo-600/50 mt-2">{u.phoneNumber}</p>
+                    <p className="text-2xl font-medium text-slate-400 mt-6 line-clamp-2 italic px-4 font-serif">"{u.bio || "Hello neighbor!"}"</p>
+                  </div>
+                  <div className="flex w-full space-x-6 pt-6 z-10">
+                    <button onClick={()=>handleToggleFollow(u.uid)} className={`flex-1 py-6 rounded-[30px] font-black text-2xl transition-all shadow-xl active-scale hover:scale-105 ${currentUser.following?.includes(u.uid) ? 'bg-slate-100 text-slate-500 border-4 border-slate-200 shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                      {currentUser.following?.includes(u.uid) ? 'Following' : 'Follow'}
                     </button>
-                    <button onClick={() => handleToggleFollow(u.uid)} className={`p-6 rounded-3xl active-scale shadow-sm ${currentUser.following?.includes(u.uid) ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
-                      {currentUser.following?.includes(u.uid) ? <ICONS.UserCheck className="w-10 h-10" /> : <ICONS.UserPlus className="w-10 h-10" />}
-                    </button>
+                    <button onClick={()=>startNewGame('tictactoe', u.uid)} className="px-10 py-6 bg-green-50 text-green-700 rounded-[30px] font-black text-2xl border-4 border-green-100 active-scale shadow-sm hover:shadow-md transition-all">Play</button>
                   </div>
                 </div>
               ))}
@@ -489,136 +609,224 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'messages' && (
-          <div className="h-[78vh] flex flex-col animate-slide-up bg-white rounded-[70px] shadow-2xl border-[10px] border-indigo-50 overflow-hidden">
-            {!selectedChatUser ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-12">
-                <ICONS.MessageCircle className="w-48 h-48 text-indigo-200 mb-10 animate-pulse" />
-                <h2 className="text-5xl font-black mb-6">Your Warm Conversations</h2>
-                <p className="text-3xl font-medium opacity-60 max-w-lg leading-relaxed">Choose a dear friend to start sharing stories and checking in.</p>
-                <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl">
-                  {users.filter(u => currentUser.following?.includes(u.uid)).map(u => (
-                    <button key={u.id} onClick={() => setSelectedChatUser(u)} className="p-8 bg-slate-50 hover:bg-indigo-50 rounded-[40px] flex items-center space-x-6 border-4 border-transparent hover:border-indigo-100">
-                      <img src={u.avatar} className="w-20 h-20 rounded-full border-4 border-white shadow-md" alt="" />
-                      <span className="text-2xl font-black text-slate-800">{u.name}</span>
-                    </button>
-                  ))}
+        {activeTab === 'games' && (
+          <div className="space-y-12 animate-slide-up">
+            <h1 className="text-6xl font-black tracking-tight">Neighborhood Games</h1>
+            {activeGame ? (
+              <div className="bg-white p-16 rounded-[70px] shadow-2xl text-center space-y-12 border-8 border-indigo-50 relative overflow-hidden">
+                <div className="space-y-4">
+                  <h2 className="text-7xl font-black text-indigo-950 tracking-tighter">Tic Tac Toe</h2>
+                  <p className="text-3xl font-bold text-slate-400">Playing with <span className="text-indigo-600">{users.find(u=>u.uid === activeGame.players.find(p=>p!==currentUser.uid))?.name}</span></p>
                 </div>
+
+                {activeGame.status === 'finished' ? (
+                  <div className="space-y-10 animate-fade-in py-10">
+                    <div className="text-[12rem] animate-bounce">🏆</div>
+                    <h3 className="text-7xl font-black text-indigo-900">
+                      {activeGame.winner === currentUser.uid ? "You Won!" : (activeGame.winner === 'draw' ? "It's a Draw!" : "A close game! Try again!")}
+                    </h3>
+                    <button onClick={async ()=>await deleteDoc(doc(db, "gameSessions", activeGame.id))} className="px-20 py-8 bg-indigo-600 text-white text-4xl font-black rounded-[40px] shadow-2xl active-scale hover:bg-indigo-700 transition-all">Back to Menu</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-8 max-w-md mx-auto p-10 bg-indigo-50 rounded-[60px] shadow-inner border-4 border-indigo-100">
+                      {activeGame.boardState.map((cell, idx) => (
+                        <button 
+                          key={idx} 
+                          onClick={()=>handleGameMove(idx)} 
+                          className={`h-40 bg-white rounded-[40px] text-8xl font-black flex items-center justify-center shadow-xl active-scale transition-all border-4 ${!cell && activeGame.currentTurn === currentUser.uid ? 'border-indigo-300 hover:border-indigo-500' : 'border-transparent'}`}
+                        >
+                          <span className={cell === 'X' ? 'text-indigo-600 drop-shadow-sm' : 'text-rose-500 drop-shadow-sm'}>{cell}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className={`p-10 rounded-[45px] text-5xl font-black shadow-lg transition-all ${activeGame.currentTurn === currentUser.uid ? 'bg-green-100 text-green-700 animate-pulse border-4 border-green-300' : 'bg-slate-100 text-slate-400 border-4 border-slate-200'}`}>
+                      {activeGame.currentTurn === currentUser.uid ? "Your Turn!" : "Friend is thinking..."}
+                    </div>
+                    <button onClick={async ()=>await updateDoc(doc(db, "gameSessions", activeGame.id), {status: 'finished', winner: activeGame.players.find(p=>p!==currentUser.uid)})} className="text-3xl font-black text-rose-300 hover:text-rose-500 transition-colors underline decoration-4 underline-offset-8 decoration-rose-50">Stop Game</button>
+                  </>
+                )}
               </div>
             ) : (
-              <div className="flex-1 flex flex-col h-full">
-                <div className="p-10 border-b-[6px] border-slate-50 flex items-center justify-between bg-white z-10 shadow-sm">
-                  <div className="flex items-center space-x-6">
-                    <button onClick={() => setSelectedChatUser(null)} className="p-5 hover:bg-slate-100 rounded-full active-scale">
-                      <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    </button>
-                    <img src={selectedChatUser.avatar} className="w-20 h-20 rounded-[30px] border-4 border-white shadow-lg" alt="" />
-                    <h2 className="text-4xl font-black text-slate-900 leading-tight">{selectedChatUser.name}</h2>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-12 space-y-8 bg-slate-50/30">
-                  {messages.map(m => (
-                    <div key={m.id} className={`flex ${m.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[80%] p-8 rounded-[45px] text-3xl font-medium shadow-md leading-relaxed ${m.senderId === currentUser.uid ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border-2 border-indigo-50 text-slate-800 rounded-tl-none'}`}>
-                        {m.text}
-                      </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                {GAMES.map(game => (
+                  <div key={game.id} className="bg-white p-16 rounded-[75px] shadow-2xl text-center space-y-10 border-8 border-white hover:border-indigo-100 transition-all group overflow-hidden relative">
+                    <div className="absolute -bottom-10 -right-10 text-[15rem] opacity-5 font-black group-hover:scale-150 transition-transform duration-1000 select-none">{game.name[0]}</div>
+                    <div className="text-[10rem] drop-shadow-2xl group-hover:scale-110 transition-transform duration-700">{game.icon}</div>
+                    <div className="relative z-10">
+                      <h3 className="text-6xl font-black text-indigo-950 tracking-tighter">{game.name}</h3>
+                      <p className="text-3xl font-bold text-slate-300 mt-3 uppercase tracking-widest">{game.difficulty}</p>
                     </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-                <div className="p-10 border-t-[6px] border-slate-50 flex items-center space-x-6 bg-white">
-                  <input 
-                    type="text" 
-                    value={newMessageText} 
-                    onChange={e => setNewMessageText(e.target.value)} 
-                    onKeyDown={e => e.key === 'Enter' && handleSendMessage()} 
-                    placeholder="Type a nice message..." 
-                    className="flex-1 p-8 bg-slate-100 rounded-[45px] text-3xl border-none focus:ring-0" 
-                  />
-                  <button onClick={handleSendMessage} disabled={!newMessageText.trim()} className={`p-8 rounded-full ${accentBg} active-scale hover:brightness-95`}>
-                    <svg className="w-10 h-10 rotate-90" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
-                  </button>
-                </div>
+                    <div className="space-y-6 relative z-10">
+                      <button onClick={()=>setActiveTab('friends')} className="w-full py-8 bg-indigo-600 text-white rounded-[40px] font-black text-3xl shadow-[0_20px_40px_-10px_rgba(79,70,229,0.3)] active-scale hover:bg-indigo-700">Invite a Neighbor</button>
+                      <button onClick={()=>handleTeachGame(game.name)} className="w-full py-6 bg-slate-50 text-slate-600 rounded-[35px] font-black text-2xl active-scale border-4 border-slate-100 hover:border-slate-200">Rule Book</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
 
-        {/* Other Tabs (Profile, Games, Settings) similar... */}
         {activeTab === 'profile' && viewingProfile && (
           <div className="space-y-12 animate-slide-up">
-            <div className={`${state.highContrast ? 'bg-black border-4 border-white text-white' : 'bg-white shadow-2xl'} rounded-[60px] p-16 relative`}>
-              <div className="flex flex-col md:flex-row items-center space-y-10 md:space-y-0 md:space-x-14">
-                <img src={viewingProfile.avatar} className="w-56 h-56 rounded-[60px] shadow-2xl border-8 border-white" alt="" />
-                <div className="flex-1 text-center md:text-left">
-                  <h1 className="text-7xl font-black mb-3 leading-tight">{viewingProfile.name}</h1>
-                  <p className="text-3xl font-bold opacity-70 mb-8">{viewingProfile.location}</p>
-                  <div className="flex justify-center md:justify-start space-x-16 mb-10">
-                    <div className="text-center"><span className="block text-5xl font-black text-indigo-600">{viewingProfile.followers?.length || 0}</span><span className="text-xl font-black opacity-60 uppercase tracking-widest">Followers</span></div>
-                    <div className="text-center"><span className="block text-5xl font-black text-indigo-600">{viewingProfile.following?.length || 0}</span><span className="text-xl font-black opacity-60 uppercase tracking-widest">Following</span></div>
-                  </div>
-                  <div className="flex flex-wrap gap-4 justify-center md:justify-start">
-                    {viewingProfile.uid !== currentUser.uid && (
-                      <button onClick={() => handleToggleFollow(viewingProfile.uid)} className={`px-14 py-6 rounded-[35px] text-3xl font-black transition-all active-scale shadow-lg ${currentUser.following?.includes(viewingProfile.uid) ? 'bg-slate-100 text-slate-800' : accentBg}`}>
-                        {currentUser.following?.includes(viewingProfile.uid) ? 'Unfollow' : 'Follow'}
-                      </button>
-                    )}
-                    {viewingProfile.uid === currentUser.uid && (
-                      <button onClick={() => signOut(auth)} className="px-12 py-6 bg-red-50 text-red-600 rounded-[35px] font-black text-2xl active-scale border-2 border-red-100">Sign Out</button>
-                    )}
-                  </div>
-                </div>
+            <div className="bg-white p-20 rounded-[80px] shadow-2xl text-center md:text-left md:flex items-center md:space-x-20 border-8 border-white relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-50/30 rounded-full -mr-64 -mt-64 blur-3xl select-none" />
+              <div className="relative inline-block mx-auto md:mx-0 z-10">
+                <img src={viewingProfile.avatar} className="w-80 h-80 rounded-[70px] border-[12px] border-white shadow-2xl object-cover bg-slate-50" alt={viewingProfile.name} />
+                {viewingProfile.uid === currentUser.uid && (
+                  <>
+                    <input type="file" ref={profilePicRef} hidden accept="image/*" onChange={handleProfilePicChange} />
+                    <button onClick={()=>profilePicRef.current?.click()} className="absolute -bottom-8 -right-8 bg-indigo-600 text-white p-8 rounded-full shadow-2xl border-8 border-white active-scale hover:bg-indigo-700 transition-all">
+                      {isUploading ? <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div> : <ICONS.ImagePlus className="w-12 h-12" />}
+                    </button>
+                  </>
+                )}
               </div>
-              <div className="mt-14 border-t-4 border-slate-50 pt-12">
-                <p className="text-4xl italic font-medium opacity-90 leading-relaxed font-serif">"{viewingProfile.bio || "Sharing stories and spreading joy."}"</p>
+              <div className="mt-16 md:mt-0 flex-1 z-10">
+                <h1 className="text-9xl font-black text-indigo-950 tracking-tighter">{viewingProfile.name}</h1>
+                <p className="text-5xl font-bold text-indigo-600 mt-4 flex items-center justify-center md:justify-start">
+                  <span className="opacity-40 text-3xl mr-3 font-serif italic">#</span>
+                  {viewingProfile.phoneNumber}
+                </p>
+                
+                <div className="mt-12 relative group">
+                  {isEditingBio ? (
+                    <div className="space-y-6">
+                      <textarea 
+                        value={editableBio}
+                        onChange={(e) => setEditableBio(e.target.value)}
+                        className="w-full p-10 bg-indigo-50 rounded-[50px] italic font-serif text-4xl text-slate-700 shadow-inner leading-relaxed border-4 border-indigo-200 outline-none focus:border-indigo-400 min-h-[200px] resize-none"
+                        placeholder="Tell us a bit about yourself..."
+                      />
+                      <div className="flex space-x-4">
+                        <button onClick={handleSaveBio} className="flex-1 py-6 bg-green-600 text-white text-3xl font-black rounded-[30px] active-scale shadow-lg hover:bg-green-700 transition-all">
+                          {isUploading ? "Saving..." : "Save Bio"}
+                        </button>
+                        <button onClick={() => setIsEditingBio(false)} className="px-10 py-6 bg-slate-100 text-slate-500 text-3xl font-black rounded-[30px] active-scale">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="p-10 bg-indigo-50/50 rounded-[50px] italic font-serif text-4xl text-slate-700 shadow-inner leading-relaxed border-2 border-indigo-100/50">
+                        "{viewingProfile.bio || "Connecting with my community."}"
+                      </div>
+                      {viewingProfile.uid === currentUser.uid && (
+                        <button 
+                          onClick={() => {
+                            setEditableBio(viewingProfile.bio || "");
+                            setIsEditingBio(true);
+                          }}
+                          className="absolute -top-6 -right-6 p-4 bg-white text-indigo-600 rounded-full shadow-xl border-4 border-indigo-50 active-scale hover:scale-110 transition-all"
+                        >
+                          <ICONS.PenLine className="w-8 h-8" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {viewingProfile.uid === currentUser.uid && !isEditingBio && (
+                  <div className="mt-12 flex flex-wrap gap-6 justify-center md:justify-start">
+                    <button onClick={()=>signOut(auth)} className="px-16 py-7 bg-rose-50 text-rose-600 text-3xl font-black rounded-[35px] active-scale border-4 border-rose-100 shadow-sm transition-all hover:bg-rose-100">Sign Out</button>
+                    <button onClick={()=>setActiveTab('settings')} className="px-12 py-7 bg-slate-50 text-slate-600 text-3xl font-black rounded-[35px] active-scale border-4 border-slate-100 transition-all"><ICONS.Settings className="w-10 h-10" /></button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Games and Settings omitted for brevity, same functional pattern */}
+        {activeTab === 'settings' && (
+          <div className="space-y-12 animate-slide-up">
+            <h1 className="text-6xl font-black tracking-tight">App Settings</h1>
+            <div className="bg-white p-16 rounded-[70px] shadow-2xl space-y-12 border-8 border-white">
+               <div className="flex justify-between items-center p-10 bg-slate-50 rounded-[45px] shadow-inner border-4 border-slate-100">
+                  <div className="space-y-2">
+                    <span className="text-4xl font-black text-indigo-950">App Language</span>
+                    <p className="text-xl font-bold text-slate-400">Change your experience</p>
+                  </div>
+                  <select 
+                    value={state.language} 
+                    onChange={e => setState({...state, language: e.target.value as Language})} 
+                    className="p-8 rounded-3xl text-3xl font-black bg-white border-4 border-indigo-100 outline-none cursor-pointer focus:border-indigo-400 shadow-sm"
+                  >
+                    {Object.entries(LANGUAGE_NAMES).map(([code, name]) => (<option key={code} value={code}>{name}</option>))}
+                  </select>
+               </div>
+               <div className="flex justify-between items-center p-10 bg-slate-50 rounded-[45px] shadow-inner border-4 border-slate-100">
+                  <div className="space-y-2">
+                    <span className="text-4xl font-black text-indigo-950">Audio Reader</span>
+                    <p className="text-xl font-bold text-slate-400">Hear summaries read aloud</p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const newVal = !state.voiceEnabled;
+                      setState({...state, voiceEnabled: newVal});
+                      if (newVal) speakText("Voice assistance turned on.");
+                    }} 
+                    className={`px-12 py-6 rounded-[30px] text-3xl font-black transition-all shadow-xl active-scale ${state.voiceEnabled ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border-4 border-slate-200 shadow-none'}`}
+                  >
+                    {state.voiceEnabled ? 'Enabled' : 'Disabled'}
+                  </button>
+               </div>
+            </div>
+          </div>
+        )}
       </main>
 
-      <nav className={`fixed bottom-8 left-8 right-8 ${state.highContrast ? 'bg-black border-[6px] border-white' : 'bg-white/95 backdrop-blur-3xl border-4 border-white'} rounded-[55px] z-50 shadow-2xl flex items-stretch justify-around h-32 px-4`}>
-        <NavBtn icon={<ICONS.Home />} label="Home" active={activeTab === 'home'} onClick={() => setActiveTab('home')} highContrast={state.highContrast} />
-        <NavBtn icon={<ICONS.Users />} label="Friends" active={activeTab === 'friends'} onClick={() => setActiveTab('friends')} highContrast={state.highContrast} />
-        <NavBtn icon={<ICONS.MessageCircle />} label="Chat" active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} highContrast={state.highContrast} />
-        <NavBtn icon={<ICONS.Gamepad />} label="Games" active={activeTab === 'games'} onClick={() => setActiveTab('games')} highContrast={state.highContrast} />
-        <NavBtn icon={<ICONS.Settings />} label="Ajustes" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} highContrast={state.highContrast} />
+      <nav className="fixed bottom-8 left-8 right-8 h-32 bg-white/95 backdrop-blur-3xl rounded-[60px] border-4 border-white shadow-[0_40px_100px_rgba(0,0,0,0.2)] flex items-center justify-around px-6 z-50">
+        <NavBtn icon={<ICONS.Home />} label="Home" active={activeTab === 'home'} onClick={()=>setActiveTab('home')} />
+        <NavBtn icon={<ICONS.Users />} label="Neighbors" active={activeTab === 'friends'} onClick={()=>setActiveTab('friends')} />
+        <NavBtn icon={<ICONS.Gamepad />} label="Games" active={activeTab === 'games'} onClick={()=>setActiveTab('games')} />
+        <NavBtn icon={<ICONS.Settings />} label="Settings" active={activeTab === 'settings'} onClick={()=>setActiveTab('settings')} />
       </nav>
 
-      <AIAssistant language={state.language} highContrast={state.highContrast} voiceEnabled={state.voiceEnabled} />
-
+      {/* Popups */}
       {(showRecap || isTeachingGame) && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/75 backdrop-blur-2xl">
-           <div className={`${state.highContrast ? 'bg-black border-4 border-white text-white' : 'bg-white'} w-full max-w-3xl rounded-[70px] overflow-hidden shadow-2xl animate-slide-up relative`}>
-              <div className="p-10 border-b-4 border-slate-50 flex justify-between items-center">
-                 <h2 className="text-4xl font-black tracking-tight">{isTeachingGame ? `Mastering ${selectedGameName}` : 'Your Daily Recap'}</h2>
-                 <button onClick={() => { setShowRecap(false); setIsTeachingGame(false); }} className="p-5 hover:bg-slate-100 rounded-full active-scale"><svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="4" strokeLinecap="round"/></svg></button>
-              </div>
-              <div className="p-14 max-h-[75vh] overflow-y-auto font-serif text-3xl leading-relaxed italic text-slate-800">
-                 {isTeachingGame ? gameTutorialText : recapText}
-                 {!(isTeachingGame ? gameTutorialText : recapText) && <p className="animate-pulse">Talking to the experts...</p>}
-                 {(isTeachingGame ? gameTutorialText : recapText) && (
-                   <button onClick={() => { setShowRecap(false); setIsTeachingGame(false); }} className={`mt-14 w-full py-8 rounded-[35px] font-black text-3xl ${accentBg} active-scale`}>I understand!</button>
-                 )}
-              </div>
-           </div>
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-3xl z-[100] flex items-center justify-center p-8 animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-[80px] p-20 space-y-16 animate-slide-up border-[16px] border-white shadow-[0_50px_100px_rgba(0,0,0,0.5)] relative">
+            <div className="flex justify-between items-center border-b-8 border-indigo-50 pb-10">
+              <h2 className="text-7xl font-black text-indigo-950 tracking-tighter">{isTeachingGame ? "Rule Book" : "Daily Digest"}</h2>
+              <button 
+                onClick={()=>{setShowRecap(false); setIsTeachingGame(false); window.speechSynthesis.cancel();}} 
+                className="p-6 hover:bg-slate-50 rounded-full active-scale transition-colors border-4 border-transparent hover:border-slate-100"
+              >
+                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="6" strokeLinecap="round"/></svg>
+              </button>
+            </div>
+            <div className="text-5xl leading-tight italic text-slate-700 max-h-[50vh] overflow-y-auto font-serif px-6 custom-scrollbar text-center md:text-left">
+              {isGeneratingRecap ? (
+                <div className="flex flex-col items-center py-24 space-y-8 animate-pulse">
+                  <ICONS.Radio className="w-24 h-24 text-indigo-400 animate-spin-slow" />
+                  <p className="font-sans font-black text-indigo-600 tracking-wide uppercase text-2xl">Transmitting stories...</p>
+                </div>
+              ) : (isTeachingGame ? gameTutorialText : recapText)}
+            </div>
+            <button 
+              onClick={()=>{setShowRecap(false); setIsTeachingGame(false); window.speechSynthesis.cancel();}} 
+              className="w-full py-10 bg-indigo-600 text-white text-5xl font-black rounded-[45px] shadow-2xl shadow-indigo-100 active-scale hover:bg-indigo-700 transition-all"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
+      
+      <AIAssistant language={state.language} voiceEnabled={state.voiceEnabled} />
     </div>
   );
 };
 
-// Simplified Helpers
-const NavBtn: React.FC<{ icon: React.ReactElement<any>, label: string, active: boolean, onClick: () => void, highContrast: boolean }> = ({ icon, label, active, onClick, highContrast }) => {
-  const color = active ? (highContrast ? 'text-yellow-400' : 'text-indigo-600') : 'text-slate-400';
-  return (
-    <button onClick={onClick} className={`flex-1 flex flex-col items-center justify-center space-y-2 transition-all active-scale ${color}`}>
-      {React.cloneElement(icon, { className: `w-12 h-12 ${active ? 'scale-125' : ''}` })}
-      <span className="text-xs font-black uppercase tracking-widest">{label}</span>
-    </button>
-  );
-};
+const NavBtn: React.FC<{ icon: any, label: string, active: boolean, onClick: ()=>void }> = ({ icon, label, active, onClick }) => (
+  <button onClick={onClick} className={`flex-1 flex flex-col items-center justify-center space-y-2 transition-all active-scale group ${active ? 'text-indigo-600' : 'text-slate-300'}`}>
+    <div className={`p-4 rounded-3xl transition-all duration-500 ${active ? 'bg-indigo-50 shadow-inner' : 'group-hover:bg-slate-50'}`}>
+      {React.cloneElement(icon, { className: `w-14 h-14 ${active ? 'scale-110' : ''} transition-all duration-300` })}
+    </div>
+    <span className={`text-sm font-black uppercase tracking-widest ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
+  </button>
+);
 
 export default App;

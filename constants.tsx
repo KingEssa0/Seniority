@@ -62,6 +62,9 @@ export const ICONS = {
   Eye: (props: any) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
   ),
+  EyeOff: (props: any) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a9.14 9.14 0 0 1 1.63-2.31M6.06 6.06A10.01 10.01 0 0 1 12 4c7 0 10 7 10 7a9.17 9.17 0 0 1-1.63 2.31M1 1l22 22"/><circle cx="12" cy="12" r="3"/></svg>
+  ),
   Smile: (props: any) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
   ),
@@ -226,7 +229,7 @@ export const LANGUAGE_NAMES: Record<string, string> = {
   zh: "中文",
   ur: "اردو",
   hi: "हिन्दी",
-  pa: "ਪੰਜਾਬี",
+  pa: "ਪੰਜਾਬੀ",
   nl: "Nederlands",
   ar: "العربية",
   pt: "Português"

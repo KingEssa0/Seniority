@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ICONS, TRANSLATIONS } from '../constants';
-import { askAssistant } from '../services/gemini';
-import { Language } from '../types';
+import { ICONS, TRANSLATIONS } from '../constants.tsx';
+import { askAssistant } from '../services/gemini.ts';
+import { Language } from '../types.ts';
 
 interface AIAssistantProps {
   language: Language;
