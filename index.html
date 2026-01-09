@@ -13,7 +13,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
   <script>
-    // Polyfill process.env for browser environments to prevent crashes
     window.process = window.process || { env: { API_KEY: "" } };
     
     tailwind.config = {
@@ -23,6 +22,10 @@
             sans: ['"Open Sans"', 'sans-serif'],
             serif: ['"Playfair Display"', 'serif'],
           },
+          borderRadius: {
+            'huge': '60px',
+            'mobile': '32px',
+          }
         },
       },
     }
@@ -34,10 +37,17 @@
       color: #0f172a;
       -webkit-tap-highlight-color: transparent;
       user-select: none;
+      overflow-x: hidden; /* Prevent horizontal scrolling */
+      width: 100%;
     }
     
+    #root {
+      width: 100%;
+      min-height: 100vh;
+    }
+
     .pb-safe {
-      padding-bottom: env(safe-area-inset-bottom);
+      padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
     }
     .pt-safe {
       padding-top: env(safe-area-inset-top);
@@ -51,19 +61,8 @@
       scrollbar-width: none;
     }
 
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f1f1;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 10px;
-    }
-
     @keyframes slideUp {
-      from { transform: translateY(100%); opacity: 0; }
+      from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
     @keyframes fadeIn {
@@ -71,7 +70,7 @@
       to { opacity: 1; }
     }
     .animate-slide-up {
-      animation: slideUp 0.3s ease-out forwards;
+      animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     .animate-fade-in {
       animation: fadeIn 0.4s ease-out forwards;
@@ -81,10 +80,19 @@
       transform: scale(0.96);
     }
 
-    /* Handwritten memory style */
     .memory-content {
       font-family: 'Playfair Display', serif;
       line-height: 1.4;
+    }
+
+    /* Fix for mobile inputs to prevent zooming */
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+    @media (min-width: 640px) {
+      input, textarea, select {
+        font-size: inherit !important;
+      }
     }
   </style>
 <script type="importmap">
@@ -100,7 +108,7 @@
 }
 </script>
 </head>
-<body class="overflow-x-hidden font-sans text-slate-900">
+<body class="font-sans text-slate-900 selection:bg-indigo-100">
   <div id="root"></div>
   <script type="module" src="./index.tsx"></script>
 </body>

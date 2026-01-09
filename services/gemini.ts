@@ -7,20 +7,11 @@ const LANGUAGE_CODE_TO_NAME: Record<string, string> = {
   ar: "Arabic", pt: "Portuguese"
 };
 
-const getApiKey = () => {
-  const key = process.env.API_KEY;
-  if (!key) {
-    console.warn("Gemini API Key is missing. AI features will be unavailable.");
-  }
-  return key || "";
-};
-
+// Use gemini-3-flash-preview for basic text tasks and simple Q&A.
 export async function askAssistant(prompt: string, language: string = 'en') {
-  const apiKey = getApiKey();
-  if (!apiKey) return "I need an API key to help you. Please check your settings.";
-  
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    // Correct initialization using process.env.API_KEY directly.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -30,16 +21,14 @@ export async function askAssistant(prompt: string, language: string = 'en') {
     });
     return response.text;
   } catch (error) {
+    console.error("Assistant Error:", error);
     return "I'm having a little trouble connecting. Please try again later.";
   }
 }
 
 export async function teachGameTutorial(gameName: string, language: string) {
-  const apiKey = getApiKey();
-  if (!apiKey) return "Rule book is offline (Missing API Key).";
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Explain how to play ${gameName} simply for an elderly beginner in ${language}. Provide 5 numbered steps.`,
@@ -55,11 +44,8 @@ export async function teachGameTutorial(gameName: string, language: string) {
 }
 
 export async function translateContent(text: string, targetLangCode: string) {
-  const apiKey = getApiKey();
-  if (!apiKey) return text;
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const targetLangName = LANGUAGE_CODE_TO_NAME[targetLangCode] || "English";
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -70,17 +56,16 @@ export async function translateContent(text: string, targetLangCode: string) {
     });
     return response.text?.trim() || text;
   } catch (error) {
+    console.error("Translation Error:", error);
     return text;
   }
 }
 
 export async function summarizeFeed(posts: any[], language: string) {
-  const apiKey = getApiKey();
-  if (!apiKey) return "I can't read the neighborhood news without my glasses (Missing API Key).";
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
     if (!posts || posts.length === 0) return "Nothing new from your friends yet. Why not share a memory of your own?";
+    
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const textData = posts.map(p => `${p.authorName} shared: ${p.content}`).join('\n');
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -97,12 +82,11 @@ export async function summarizeFeed(posts: any[], language: string) {
 }
 
 export async function describeImage(imageUrl: string, language: string) {
-  const apiKey = getApiKey();
-  if (!apiKey) return "I can't see the photo clearly right now (Missing API Key).";
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const base64Data = imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
+    
+    // Using gemini-3-flash-preview for vision tasks as per guidelines.
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: { 
@@ -114,16 +98,14 @@ export async function describeImage(imageUrl: string, language: string) {
     });
     return response.text || "It's a lovely photo.";
   } catch (error) {
+    console.error("Image Description Error:", error);
     return "I can't see the photo clearly right now.";
   }
 }
 
 export async function checkPostSafety(content: string, language: string) {
-  const apiKey = getApiKey();
-  if (!apiKey) return "[SAFE] Standard post.";
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Is this post a scam? Explain why in simple ${language}: ${content}`,
@@ -131,16 +113,14 @@ export async function checkPostSafety(content: string, language: string) {
     });
     return response.text || "[SAFE] This looks like a regular post.";
   } catch (error) {
+    console.error("Safety Check Error:", error);
     return "[SAFE] Standard post.";
   }
 }
 
 export async function enhanceStory(briefCaption: string, language: string) {
-  const apiKey = getApiKey();
-  if (!apiKey) return briefCaption;
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Turn this brief caption into a nostalgic, heartwarming short story in ${language}: ${briefCaption}`,
@@ -148,6 +128,7 @@ export async function enhanceStory(briefCaption: string, language: string) {
     });
     return response.text || briefCaption;
   } catch (error) {
+    console.error("Enhancement Error:", error);
     return briefCaption;
   }
 }

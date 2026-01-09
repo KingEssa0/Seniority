@@ -1,831 +1,500 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { AppState, Language, Post, User, Message, Game, Circle, GameSession } from './types.ts';
-import { ICONS, TRANSLATIONS, LANGUAGE_NAMES, IS_RTL } from './constants.tsx';
+import React, { useState, useEffect, useMemo } from 'react';
+// Removed missing AppState import
+import { Language, Post, User, Notification, Game, Group } from './types.ts';
+import { ICONS, TRANSLATIONS, LANGUAGE_NAMES } from './constants.tsx';
 import { PostCard } from './components/PostCard.tsx';
 import { AIAssistant } from './components/AIAssistant.tsx';
-import { enhanceStory, summarizeFeed, teachGameTutorial } from './services/gemini.ts';
 import { 
   auth, db, storage, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, 
   updateDoc, doc, arrayUnion, arrayRemove, getDoc, setDoc, where, limit,
-  onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  ref, uploadString, getDownloadURL, getDocs, deleteDoc
+  onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  GoogleAuthProvider, signInWithPopup,
+  ref, uploadString, getDownloadURL
 } from './services/firebase.ts';
 
 const GAMES: Game[] = [
-  { id: 'tictactoe', name: 'Tic Tac Toe', icon: '❌⭕', descriptionKey: 'chessDesc', difficulty: 'Easy' },
-  { id: 'checkers', name: 'Checkers', icon: '🔴', descriptionKey: 'checkersDesc', difficulty: 'Medium' },
+  { id: 'tictactoe', name: 'Tic Tac Toe', icon: '❌⭕', descriptionKey: 'Simple & Fun', difficulty: 'Easy' },
+  { id: 'checkers', name: 'Checkers', icon: '🔴⚫', descriptionKey: 'Classic Board', difficulty: 'Medium' },
 ];
-
-const COUNTRY_CODES = [
-  { code: '+1', name: 'USA/Canada' },
-  { code: '+44', name: 'UK' },
-  { code: '+92', name: 'Pakistan' },
-  { code: '+91', name: 'India' },
-  { code: '+61', name: 'Australia' },
-  { code: '+34', name: 'Spain' },
-  { code: '+33', name: 'France' },
-  { code: '+49', name: 'Germany' },
-  { code: '+86', name: 'China' },
-  { code: '+52', name: 'Mexico' },
-];
-
-const censorText = (text: string) => {
-  const badWords = /\b(fuck|nigger|ass|shit|bitch|bastard|dick|pussy|cunt|faggot|kike|retard)\b/gi;
-  return text.replace(badWords, '****');
-};
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isProcessingAuth, setIsProcessingAuth] = useState(false);
-  const [state, setState] = useState<AppState>({
-    language: 'en',
-    fontSize: 'large',
-    highContrast: false,
-    voiceEnabled: true,
-    user: null
-  });
-
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  
   const [posts, setPosts] = useState<Post[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [activeGame, setActiveGame] = useState<GameSession | null>(null);
-  
-  const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'games' | 'settings' | 'profile'>('home');
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'games' | 'profile'>('home');
+  const [neighborTab, setNeighborTab] = useState<'all' | 'groups'>('all');
   const [viewingProfile, setViewingProfile] = useState<User | null>(null);
-
+  
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostImage, setNewPostImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   
   const [authEmail, setAuthEmail] = useState('');
-  const [authPhoneCode, setAuthPhoneCode] = useState('+1');
-  const [authPhone, setAuthPhone] = useState('');
   const [authPassword, setAuthPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [authName, setAuthName] = useState('');
   const [isLoginMode, setIsLoginMode] = useState(true);
 
-  const [friendSearchCode, setFriendSearchCode] = useState('+1');
-  const [friendSearchPhone, setFriendSearchPhone] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  // Edit Profile States
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editBio, setEditBio] = useState('');
+  
+  // Create Group States
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupDesc, setGroupDesc] = useState('');
 
-  const [showRecap, setShowRecap] = useState(false);
-  const [recapText, setRecapText] = useState<string | null>(null);
-  const [isGeneratingRecap, setIsGeneratingRecap] = useState(false);
-  const [isTeachingGame, setIsTeachingGame] = useState(false);
-  const [gameTutorialText, setGameTutorialText] = useState<string | null>(null);
-  const [selectedGameName, setSelectedGameName] = useState<string | null>(null);
+  // Game States
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [gameMode, setGameMode] = useState<'selection' | 'mode' | 'challenge'>('selection');
 
-  // Profile editing states
-  const [isEditingBio, setIsEditingBio] = useState(false);
-  const [editableBio, setEditableBio] = useState('');
+  const profilePosts = useMemo(() => {
+    if (!viewingProfile) return [];
+    return posts.filter(p => p.authorId === viewingProfile.uid);
+  }, [posts, viewingProfile]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const profilePicRef = useRef<HTMLInputElement>(null);
+  const algorithmicFeed = useMemo(() => {
+    if (!currentUser || activeTab !== 'home') return posts;
+    return [...posts].sort((a, b) => {
+      const getScore = (p: Post) => {
+        let s = 0;
+        const now = Date.now();
+        const age = (now - (p.createdAt?.toMillis ? p.createdAt.toMillis() : now)) / 3600000;
+        s += Math.max(0, 100 - age);
+        if (currentUser.following?.includes(p.authorId)) s += 200;
+        s += (p.likes?.length || 0) * 5;
+        return s;
+      };
+      return getScore(b) - getScore(a);
+    });
+  }, [posts, currentUser, activeTab]);
 
-  const t = TRANSLATIONS[state.language] || TRANSLATIONS.en;
-  const isRtl = IS_RTL(state.language);
-
-  // Authentication Observer
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", fbUser.uid));
-          if (userDoc.exists()) {
-            const userData = { id: fbUser.uid, uid: fbUser.uid, ...userDoc.data() } as User;
-            setCurrentUser(userData);
-            setState(prev => ({ ...prev, user: userData, language: userData.language || 'en' }));
-          }
-        } catch (err) {
-          console.error("Error in auth observer:", err);
+        const userDocRef = doc(db, "users", fbUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists()) {
+          const userData = { id: fbUser.uid, uid: fbUser.uid, ...userDoc.data() } as User;
+          setCurrentUser(userData);
+          
+          const nq = query(collection(db, "notifications"), where("toId", "==", fbUser.uid), orderBy("timestamp", "desc"), limit(20));
+          const unsubscribeNotifs = onSnapshot(nq, (snap) => {
+            setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+          });
+
+          const gq = query(collection(db, "groups"), orderBy("createdAt", "desc"), limit(20));
+          const unsubscribeGroups = onSnapshot(gq, (snap) => {
+            setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() } as Group)));
+          });
+
+          return () => {
+            unsubscribeNotifs();
+            unsubscribeGroups();
+          };
+        } else if (fbUser.providerData.some(p => p.providerId === 'google.com')) {
+          // Case for new Google users who haven't had their Firestore doc created yet
+          const newUser = { 
+            id: fbUser.uid, 
+            uid: fbUser.uid, 
+            name: fbUser.displayName || fbUser.email?.split('@')[0] || "New Neighbor", 
+            avatar: fbUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${fbUser.uid}`, 
+            following: [], pendingRequests: [], sentRequests: [],
+            phoneNumber: fbUser.phoneNumber || '',
+            location: 'Community',
+            bio: 'Just joined the neighborhood!'
+          };
+          await setDoc(userDocRef, newUser);
+          setCurrentUser(newUser as User);
         }
       } else {
         setCurrentUser(null);
-        setState(prev => ({ ...prev, user: null }));
       }
       setLoading(false);
     });
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
-  // Content Sync
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(40));
-    return onSnapshot(q, (snapshot) => {
-      const allPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
-      setPosts(allPosts);
-    });
+    const pq = query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(50));
+    const unsubscribePosts = onSnapshot(pq, (snap) => setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Post))));
+    
+    const uq = query(collection(db, "users"), limit(50));
+    const unsubscribeUsers = onSnapshot(uq, (snap) => setUsers(snap.docs.map(d => ({ id: d.id, uid: d.id, ...d.data() } as User))));
+
+    return () => {
+      unsubscribePosts();
+      unsubscribeUsers();
+    };
   }, [currentUser]);
 
-  useEffect(() => {
+  const handleRequestNeighbor = async (target: User) => {
     if (!currentUser) return;
-    const q = query(collection(db, "users"), limit(50));
-    return onSnapshot(q, (snapshot) => {
-      setUsers(snapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() } as User)));
+    await updateDoc(doc(db, "users", target.uid), { pendingRequests: arrayUnion(currentUser.uid) });
+    await updateDoc(doc(db, "users", currentUser.uid), { sentRequests: arrayUnion(target.uid) });
+    await addDoc(collection(db, "notifications"), {
+      toId: target.uid,
+      type: 'friend_request',
+      fromId: currentUser.uid,
+      fromName: currentUser.name,
+      fromAvatar: currentUser.avatar,
+      timestamp: serverTimestamp(),
+      read: false
     });
-  }, [currentUser]);
+  };
 
-  useEffect(() => {
+  const handleAcceptRequest = async (fromId: string) => {
     if (!currentUser) return;
-    const q = query(collection(db, "gameSessions"), where("players", "array-contains", currentUser.uid), where("status", "==", "playing"), limit(1));
-    return onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        setActiveGame({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as GameSession);
-      } else {
-        setActiveGame(null);
-      }
+    await updateDoc(doc(db, "users", currentUser.uid), { 
+      pendingRequests: arrayRemove(fromId),
+      following: arrayUnion(fromId)
     });
-  }, [currentUser]);
+    await updateDoc(doc(db, "users", fromId), { 
+      sentRequests: arrayRemove(currentUser.uid),
+      following: arrayUnion(currentUser.uid)
+    });
+  };
 
-  const speakText = (text: string) => {
-    if (!state.voiceEnabled || !text) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = state.language === 'en' ? 'en-US' : state.language;
-    utterance.rate = 0.85; 
-    window.speechSynthesis.speak(utterance);
+  const handleEditProfile = async () => {
+    if (!currentUser || !editName.trim()) return;
+    await updateDoc(doc(db, "users", currentUser.uid), {
+      name: editName,
+      bio: editBio
+    });
+    setCurrentUser(prev => prev ? { ...prev, name: editName, bio: editBio } : null);
+    setIsEditingProfile(false);
+  };
+
+  const handleCreateGroup = async () => {
+    if (!currentUser || !groupName.trim()) return;
+    await addDoc(collection(db, "groups"), {
+      name: groupName,
+      description: groupDesc,
+      createdBy: currentUser.uid,
+      members: [currentUser.uid],
+      avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${groupName}`,
+      createdAt: serverTimestamp()
+    });
+    setGroupName(''); setGroupDesc(''); setIsCreatingGroup(false);
   };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isProcessingAuth) return;
-    setIsProcessingAuth(true);
-    
     try {
-      if (isLoginMode) {
-        await signInWithEmailAndPassword(auth, authEmail, authPassword);
-      } else {
-        if (!authPhone) throw new Error("Please enter your phone number.");
-        if (!authName) throw new Error("Please enter your name.");
-        
-        const fullPhone = authPhoneCode + authPhone.replace(/\D/g, '');
-        
-        let res;
-        try {
-          res = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-        } catch (authErr: any) {
-          if (authErr.code === 'auth/email-already-in-use') {
-            setIsLoginMode(true);
-            setAuthPassword('');
-            throw new Error("This email is already in use. We've switched you to 'Sign In' so you can log into your account!");
-          }
-          throw authErr;
-        }
-        
-        const newUser: User = {
-          id: res.user.uid,
-          uid: res.user.uid,
-          name: authName,
-          phoneNumber: fullPhone,
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(authName)}`,
-          location: 'Community Member',
-          bio: 'Proud to be a senior. Connecting with wisdom.',
-          following: [],
-          followers: [],
-          language: state.language
+      if (isLoginMode) await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      else {
+        const res = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+        const newUser = { 
+          id: res.user.uid, 
+          uid: res.user.uid, 
+          name: authEmail.split('@')[0], 
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${res.user.uid}`, 
+          following: [], pendingRequests: [], sentRequests: [],
+          phoneNumber: '', location: 'Community', bio: '' 
         };
-        
         await setDoc(doc(db, "users", res.user.uid), newUser);
-        
-        // Immediate local state update to bypass doc sync delay
-        setCurrentUser(newUser);
-        setState(prev => ({ ...prev, user: newUser }));
       }
-    } catch (err: any) { 
-      alert(err.message); 
-    } finally {
-      setIsProcessingAuth(false);
-    }
+    } catch (err: any) { alert(err.message); }
   };
 
-  const handleSearchByPhone = async () => {
-    if (!friendSearchPhone.trim()) return;
-    setIsSearching(true);
+  const handleGoogleSignIn = async () => {
     try {
-      const fullPhone = friendSearchCode + friendSearchPhone.replace(/\D/g, '');
-      const q = query(collection(db, "users"), where("phoneNumber", "==", fullPhone));
-      const snap = await getDocs(q);
-      const res = snap.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data() } as User));
-      setSearchResults(res);
-      if (res.length === 0) alert("We couldn't find anyone with that number. Double check the country code!");
-    } catch (err) {
-      alert("Search failed. Please try again.");
-    } finally { 
-      setIsSearching(false); 
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      alert("Trouble signing in with Google. Please try again.");
     }
   };
 
   const handlePostSubmit = async () => {
-    if (!newPostContent.trim() && !newPostImage) return;
+    if (!newPostContent.trim()) return;
     setIsUploading(true);
-    let imageUrl = null;
-    try {
-      if (newPostImage) {
-        const storageRef = ref(storage, `posts/${currentUser?.uid}_${Date.now()}.jpg`);
-        await uploadString(storageRef, newPostImage, 'data_url');
-        imageUrl = await getDownloadURL(storageRef);
-      }
-      
-      await addDoc(collection(db, "posts"), {
-        authorId: currentUser!.uid,
-        authorName: currentUser!.name,
-        authorAvatar: currentUser!.avatar,
-        authorLocation: currentUser!.location,
-        content: censorText(newPostContent),
-        image: imageUrl,
-        createdAt: serverTimestamp(),
-        likes: []
-      });
-
-      setNewPostContent('');
-      setNewPostImage(null);
-    } catch (err) {
-      alert("Sharing failed. Check your internet connection.");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleToggleFollow = async (targetUid: string) => {
-    if (!currentUser) return;
-    const isFollowing = currentUser.following?.includes(targetUid);
-    const userRef = doc(db, "users", currentUser.uid);
-    try {
-      await updateDoc(userRef, {
-        following: isFollowing ? arrayRemove(targetUid) : arrayUnion(targetUid)
-      });
-      setCurrentUser(prev => {
-        if (!prev) return null;
-        const updated = {
-          ...prev,
-          following: isFollowing 
-            ? (prev.following || []).filter(id => id !== targetUid)
-            : [...(prev.following || []), targetUid]
-        };
-        setState(s => ({ ...s, user: updated }));
-        return updated;
-      });
-    } catch (err) {
-      alert("Action failed.");
-    }
-  };
-
-  const startNewGame = async (gameId: string, opponentId: string) => {
-    if (!currentUser) return;
-    const session: Partial<GameSession> = {
-      gameId,
-      players: [currentUser.uid, opponentId],
-      status: 'playing',
-      currentTurn: currentUser.uid,
-      boardState: Array(9).fill(null),
-      updatedAt: serverTimestamp()
-    };
-    try {
-      await addDoc(collection(db, "gameSessions"), session);
-      setActiveTab('games');
-    } catch (err) {
-      alert("Could not start game.");
-    }
-  };
-
-  const handleGameMove = async (index: number) => {
-    if (!activeGame || activeGame.currentTurn !== currentUser!.uid) return;
-    const newBoard = [...activeGame.boardState];
-    if (newBoard[index]) return;
-    newBoard[index] = activeGame.players[0] === currentUser!.uid ? 'X' : 'O';
-    
-    const winPatterns = [
-      [0,1,2],[3,4,5],[6,7,8],
-      [0,3,6],[1,4,7],[2,5,8],
-      [0,4,8],[2,4,6]
-    ];
-    let winner = null;
-    for (const pattern of winPatterns) {
-      const [a,b,c] = pattern;
-      if (newBoard[a] && newBoard[a] === newBoard[b] && newBoard[a] === newBoard[c]) {
-        winner = currentUser!.uid;
-        break;
-      }
-    }
-
-    const isDraw = !winner && newBoard.every(c => c !== null);
-    const opponent = activeGame.players.find(p => p !== currentUser!.uid);
-
-    await updateDoc(doc(db, "gameSessions", activeGame.id), {
-      boardState: newBoard,
-      currentTurn: opponent,
-      status: (winner || isDraw) ? 'finished' : 'playing',
-      winner: winner || (isDraw ? 'draw' : null),
-      updatedAt: serverTimestamp()
+    await addDoc(collection(db, "posts"), {
+      authorId: currentUser!.uid, authorName: currentUser!.name, authorAvatar: currentUser!.avatar, authorLocation: 'Community',
+      content: newPostContent, image: newPostImage, createdAt: serverTimestamp(), likes: [], comments: []
     });
+    setNewPostContent(''); setNewPostImage(null); setIsUploading(false);
   };
 
-  const handleProfilePicChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUser) return;
-    
-    setIsUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64 = reader.result as string;
-        const storageRef = ref(storage, `avatars/${currentUser.uid}.jpg`);
-        await uploadString(storageRef, base64, 'data_url');
-        const url = await getDownloadURL(storageRef);
-        
-        const userRef = doc(db, "users", currentUser.uid);
-        await updateDoc(userRef, { avatar: url });
-        
-        const updatedUser = { ...currentUser, avatar: url };
-        setCurrentUser(updatedUser);
-        setState(prev => ({ ...prev, user: updatedUser }));
-        
-        if (viewingProfile && viewingProfile.uid === currentUser.uid) {
-            setViewingProfile(updatedUser);
-        }
-      } catch (err) {
-        console.error("Profile upload error:", err);
-        alert("Upload failed. Please check your connection.");
-      } finally {
-        setIsUploading(false);
-        e.target.value = ''; // Reset input to allow re-selection
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSaveBio = async () => {
-    if (!currentUser) return;
-    setIsUploading(true);
-    try {
-      const userRef = doc(db, "users", currentUser.uid);
-      await updateDoc(userRef, { bio: editableBio });
-      
-      const updatedUser = { ...currentUser, bio: editableBio };
-      setCurrentUser(updatedUser);
-      setState(prev => ({ ...prev, user: updatedUser }));
-      
-      if (viewingProfile && viewingProfile.uid === currentUser.uid) {
-        setViewingProfile(updatedUser);
-      }
-      setIsEditingBio(false);
-    } catch (err) {
-      alert("Failed to save bio.");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleGenerateRecap = async () => {
-    if (isGeneratingRecap) return;
-    setShowRecap(true);
-    setIsGeneratingRecap(true);
-    try {
-      const summary = await summarizeFeed(posts.slice(0, 10), state.language);
-      setRecapText(summary || "No recent updates to share.");
-      if (state.voiceEnabled) speakText(summary || "");
-    } catch (err) {
-      setRecapText("I couldn't get the news right now. Try again shortly!");
-    } finally {
-      setIsGeneratingRecap(false);
-    }
-  };
-
-  const handleTeachGame = async (gameName: string) => {
-    setSelectedGameName(gameName);
-    setIsTeachingGame(true);
-    setGameTutorialText(null);
-    try {
-      const tutorial = await teachGameTutorial(gameName, state.language);
-      setGameTutorialText(tutorial || "I'm sorry, I couldn't find the rules for this game.");
-    } catch (err) {
-      setGameTutorialText("Could not load rules.");
-    }
-  };
-
-  if (loading) return (
-    <div className="h-screen bg-indigo-600 flex flex-col items-center justify-center text-white p-12 text-center">
-      <ICONS.Bot className="w-40 h-40 animate-bounce mb-8 opacity-90" />
-      <h1 className="text-6xl font-black tracking-tighter">Seniority</h1>
-      <p className="text-2xl font-bold mt-4 opacity-75 italic">Waking up the neighborhood...</p>
-    </div>
-  );
+  if (loading) return <div className="h-screen bg-white flex items-center justify-center"><ICONS.Bot className="w-12 h-12 animate-pulse text-indigo-600" /></div>;
 
   if (!currentUser) return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-indigo-50/30 font-sans">
-      <div className="bg-white w-full max-w-xl p-12 rounded-[60px] shadow-[0_40px_100px_-20px_rgba(79,70,229,0.2)] space-y-10 animate-fade-in border-8 border-white overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-full h-3 bg-indigo-600 shadow-md"></div>
-        <div className="text-center">
-          <div className="w-24 h-24 bg-indigo-600 rounded-[35px] flex items-center justify-center text-white mx-auto mb-6 shadow-2xl shadow-indigo-100">
-             <ICONS.Home className="w-14 h-14" />
-          </div>
-          <h1 className="text-6xl font-black text-indigo-950 tracking-tight">Seniority</h1>
-          <p className="text-xl font-bold text-slate-400 mt-2">The neighborhood social network.</p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 font-sans">
+      <div className="bg-white w-full max-w-sm p-10 rounded-[40px] border border-slate-100 text-center shadow-xl animate-fade-in">
+        <h1 className="text-4xl font-serif font-black text-indigo-900 mb-8">Seniority</h1>
         
-        <form onSubmit={handleAuth} className="space-y-6">
-          {!isLoginMode && (
-            <>
-              <div className="space-y-2">
-                <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Full Name</label>
-                <input type="text" placeholder="e.g. Grandma Rose" value={authName} onChange={e=>setAuthName(e.target.value)} className="w-full p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Phone Number</label>
-                <div className="flex space-x-3">
-                  <select value={authPhoneCode} onChange={e=>setAuthPhoneCode(e.target.value)} className="p-6 text-2xl border-4 border-slate-50 rounded-3xl bg-slate-50 font-bold outline-none cursor-pointer hover:border-indigo-100">
-                    {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
-                  </select>
-                  <input type="tel" placeholder="Your phone number" value={authPhone} onChange={e=>setAuthPhone(e.target.value)} className="flex-1 p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
-                </div>
-              </div>
-            </>
-          )}
-          <div className="space-y-2">
-            <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Email Address</label>
-            <input type="email" placeholder="example@email.com" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xl font-black text-slate-800 ml-4 uppercase tracking-widest opacity-60">Secret Password</label>
-            <div className="relative">
-              <input type={showPassword ? "text" : "password"} placeholder="••••••••" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} className="w-full p-6 text-2xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-400 rounded-3xl outline-none transition-all placeholder-slate-200 font-medium" required />
-              <button type="button" onClick={()=>setShowPassword(!showPassword)} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 hover:text-indigo-600 transition-colors p-2">
-                {showPassword ? <ICONS.EyeOff className="w-10 h-10" /> : <ICONS.Eye className="w-10 h-10" />}
-              </button>
-            </div>
-          </div>
-          <button type="submit" disabled={isProcessingAuth} className={`w-full py-8 ${isProcessingAuth ? 'bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100'} text-white text-3xl font-black rounded-[35px] transition-all active-scale flex items-center justify-center space-x-4`}>
-            {isProcessingAuth ? (
-              <div className="w-10 h-10 border-8 border-white/30 border-t-white rounded-full animate-spin"></div>
-            ) : (isLoginMode ? 'Sign In' : 'Sign Up')}
+        <form onSubmit={handleAuth} className="space-y-4 mb-6">
+          <input type="email" placeholder="Email Address" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-100 rounded-2xl outline-none transition-all" required />
+          <input type="password" placeholder="Password" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-100 rounded-2xl outline-none transition-all" required />
+          <button className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-[0.98] transition-transform">
+            {isLoginMode ? 'Sign In' : 'Join Our Neighborhood'}
           </button>
         </form>
+
+        <div className="flex items-center gap-4 mb-6">
+          <div className="flex-1 h-px bg-slate-100"></div>
+          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">or</span>
+          <div className="flex-1 h-px bg-slate-100"></div>
+        </div>
+
+        <button 
+          onClick={handleGoogleSignIn}
+          className="w-full flex items-center justify-center gap-3 py-4 bg-white border-2 border-slate-100 rounded-2xl font-black text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition-all mb-8 shadow-sm"
+        >
+          <ICONS.Google className="w-5 h-5" />
+          Continue with Google
+        </button>
         
-        <button onClick={()=>{setIsLoginMode(!isLoginMode); setAuthPassword('');}} className="w-full text-2xl font-black text-slate-400 hover:text-indigo-600 transition-all underline decoration-4 underline-offset-8 decoration-slate-100 hover:decoration-indigo-100">
-          {isLoginMode ? "New here? Come and join us!" : "Already a member? Sign in instead"}
+        <button onClick={()=>setIsLoginMode(!isLoginMode)} className="text-slate-400 font-bold text-xs tracking-wider uppercase">
+          {isLoginMode ? 'New here? Register with Email' : 'Have an account? Sign In'}
         </button>
       </div>
     </div>
   );
 
   return (
-    <div className={`min-h-screen ${state.highContrast ? 'bg-black text-white' : 'bg-slate-50 text-slate-900'} pb-40 transition-colors duration-500`}>
-      <header className="fixed top-0 inset-x-0 h-24 bg-white/95 backdrop-blur-3xl border-b border-indigo-50 flex items-center justify-between px-8 z-50 shadow-sm">
-        <div className="flex items-center space-x-4 cursor-pointer active-scale" onClick={()=>setActiveTab('home')}>
-          <div className="bg-indigo-600 p-3 rounded-[20px] text-white shadow-xl shadow-indigo-100"><ICONS.Home className="w-10 h-10" /></div>
-          <span className="text-4xl font-black tracking-tight text-indigo-950">Seniority</span>
-        </div>
-        <div className="flex items-center space-x-6">
-          <button onClick={handleGenerateRecap} className="group flex items-center bg-white text-indigo-600 px-6 py-4 rounded-[25px] font-black text-xl space-x-3 active-scale shadow-sm border-4 border-indigo-50 hover:border-indigo-100 transition-all">
-            <ICONS.Radio className={`w-8 h-8 ${isGeneratingRecap ? 'animate-pulse' : ''}`} />
-            <span className="hidden sm:inline">Daily Digest</span>
+    <div className="min-h-screen bg-white pb-24 font-sans text-slate-900 selection:bg-indigo-50">
+      <header className="fixed top-0 inset-x-0 h-16 bg-white/90 backdrop-blur-md border-b flex items-center justify-between px-6 z-[100]">
+        <h1 className="text-2xl font-serif font-black text-indigo-900 tracking-tight cursor-pointer" onClick={()=>setActiveTab('home')}>Seniority</h1>
+        <div className="flex items-center space-x-5">
+          <button onClick={()=>setShowNotifications(!showNotifications)} className="relative p-2 text-slate-400 hover:text-indigo-600 transition-colors">
+            <ICONS.Bell className="w-6 h-6" />
+            {notifications.some(n=>!n.read) && <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-indigo-600 rounded-full border-2 border-white" />}
           </button>
-          <img src={currentUser.avatar} onClick={()=>{setViewingProfile(currentUser); setActiveTab('profile')}} className="w-16 h-16 rounded-2xl border-4 border-white shadow-2xl cursor-pointer active-scale ring-4 ring-indigo-50/50 object-cover" alt="Profile" />
+          <img src={currentUser.avatar} onClick={()=>{setViewingProfile(currentUser); setActiveTab('profile')}} className="w-8 h-8 rounded-full cursor-pointer border-2 border-slate-100" />
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto pt-32 px-6">
-        {activeTab === 'home' && (
-          <div className="space-y-12 animate-slide-up">
-            <div className="p-12 rounded-[60px] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.06)] space-y-8 border-4 border-white bg-white relative group transition-all duration-500">
-              <div className="flex items-start space-x-6">
-                <img src={currentUser.avatar} className="w-24 h-24 rounded-[30px] shadow-xl border-4 border-indigo-50 object-cover" alt="Me" />
-                <textarea 
-                  placeholder={t.share} 
-                  value={newPostContent} 
-                  onChange={e=>setNewPostContent(e.target.value)} 
-                  className="flex-1 p-4 text-4xl border-none focus:ring-0 min-h-[180px] outline-none font-medium resize-none bg-transparent transition-colors text-slate-800 placeholder-slate-200" 
-                />
-              </div>
-              {newPostImage && (
-                <div className="relative group/img overflow-hidden rounded-[45px] border-8 border-slate-50 shadow-2xl">
-                  <img src={newPostImage} className="w-full max-h-[600px] object-cover" alt="Shared" />
-                  <button onClick={()=>setNewPostImage(null)} className="absolute top-6 right-6 bg-black/60 text-white p-5 rounded-full backdrop-blur-md transition-all shadow-xl active-scale border-4 border-white/20"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="4"/></svg></button>
-                </div>
-              )}
-              <div className="flex justify-between items-center border-t-8 border-slate-50 pt-10 transition-colors">
-                <div className="flex space-x-6">
-                  <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={e=>{
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      setNewPostImage(reader.result as string);
-                      e.target.value = ''; // Reset input to allow re-selection
-                    };
-                    reader.readAsDataURL(file);
-                  }} />
-                  <button onClick={()=>fileInputRef.current?.click()} className="p-8 rounded-[30px] active-scale shadow-inner transition-all border-4 border-transparent bg-slate-50 text-indigo-600"><ICONS.ImagePlus className="w-12 h-12" /></button>
-                </div>
-                <button 
-                  onClick={handlePostSubmit} 
-                  disabled={(!newPostContent.trim() && !newPostImage) || isUploading} 
-                  className="px-20 py-7 text-white text-4xl font-black rounded-[35px] shadow-2xl transition-all bg-indigo-600 shadow-indigo-200"
-                >
-                  {isUploading ? <div className="w-10 h-10 border-8 border-white/30 border-t-white rounded-full animate-spin"></div> : "Share"}
-                </button>
+      {showNotifications && (
+        <div className="fixed top-16 right-4 w-72 bg-white rounded-3xl border shadow-2xl z-[110] p-6 animate-slide-up max-h-[400px] overflow-y-auto">
+          <h3 className="text-[10px] font-black uppercase text-slate-300 mb-4 tracking-widest">Notification Center</h3>
+          {notifications.length === 0 ? <p className="text-center py-8 text-slate-200 font-medium italic text-sm">Everything is current.</p> : notifications.map(n => (
+            <div key={n.id} className="flex items-start gap-3 py-3 border-b border-slate-50 last:border-0">
+              <img src={n.fromAvatar} className="w-9 h-9 rounded-full" />
+              <div className="flex-1 text-sm">
+                <p className="leading-snug"><strong className="text-indigo-900">{n.fromName}</strong> {n.type === 'friend_request' ? 'sent a neighbor request' : 'liked your shared memory'}</p>
+                {n.type === 'friend_request' && !currentUser.following?.includes(n.fromId) && (
+                  <button onClick={()=>handleAcceptRequest(n.fromId)} className="mt-2 px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-black shadow-sm">Welcome Neighbor</button>
+                )}
               </div>
             </div>
+          ))}
+        </div>
+      )}
 
-            <div className="space-y-16">
-              {posts.map(post => (
-                <PostCard 
-                  key={post.id} 
-                  post={post} 
-                  userLanguage={state.language} 
-                  currentUserId={currentUser.uid} 
-                  onAvatarClick={()=>{
-                    const found = users.find(u => u.uid === post.authorId);
-                    setViewingProfile(found || null);
-                    setActiveTab('profile');
-                  }} 
-                  onLike={async ()=>{
-                    const isLiked = post.likes.includes(currentUser.uid);
-                    const postRef = doc(db, "posts", post.id);
-                    await updateDoc(postRef, { likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid) });
-                  }} 
-                />
-              ))}
-              {posts.length === 0 && (
-                <div className="text-center py-40 space-y-8 opacity-25">
-                  <ICONS.Smile className="w-48 h-48 mx-auto" />
-                  <p className="text-5xl font-black">Waiting for the neighborhood news...</p>
-                </div>
+      <main className="w-full max-w-xl mx-auto pt-20 px-4">
+        {activeTab === 'home' && (
+          <div className="space-y-8 animate-fade-in">
+            <div className="bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+              <textarea placeholder="Share a piece of your world..." value={newPostContent} onChange={e=>setNewPostContent(e.target.value)} className="w-full bg-transparent p-2 text-xl outline-none min-h-[80px] font-medium resize-none placeholder-slate-300" />
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <button onClick={handlePostSubmit} disabled={isUploading} className="px-8 py-2.5 bg-indigo-600 text-white rounded-full font-black text-sm shadow-lg shadow-indigo-100">{isUploading ? 'Sending...' : 'Post Memory'}</button>
+              </div>
+            </div>
+            {algorithmicFeed.map(p => <PostCard key={p.id} post={p} userLanguage={'en'} currentUserId={currentUser.uid} onAvatarClick={()=>{setViewingProfile(users.find(u=>u.uid===p.authorId)||null); setActiveTab('profile')}} />)}
+          </div>
+        )}
+
+        {activeTab === 'profile' && viewingProfile && (
+          <div className="space-y-10 animate-fade-in">
+            <div className="bg-white py-10 rounded-[40px] border border-slate-100 flex flex-col items-center text-center gap-6 shadow-sm">
+              <div className="relative">
+                <img src={viewingProfile.avatar} className="w-28 h-28 rounded-full border-4 border-white shadow-lg" />
+                {viewingProfile.uid === currentUser.uid && (
+                  <button onClick={()=>{setEditName(currentUser.name); setEditBio(currentUser.bio||''); setIsEditingProfile(true)}} className="absolute bottom-0 right-0 bg-white p-2 rounded-full shadow-md border text-indigo-600">
+                    <ICONS.Edit className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <div>
+                <h1 className="text-4xl font-serif font-black text-indigo-950">{viewingProfile.name}</h1>
+                <p className="text-slate-400 font-medium italic mt-2 px-10">{viewingProfile.bio || "A valued neighbor in our community."}</p>
+              </div>
+              <div className="flex gap-12 text-sm uppercase tracking-widest font-black text-slate-300">
+                <div className="text-center"><p className="text-indigo-950 text-xl">{profilePosts.length}</p><p>Posts</p></div>
+                <div className="text-center"><p className="text-indigo-950 text-xl">{viewingProfile.following?.length || 0}</p><p>Neighbors</p></div>
+              </div>
+              {viewingProfile.uid !== currentUser.uid && !currentUser.following?.includes(viewingProfile.uid) && (
+                <button onClick={()=>handleRequestNeighbor(viewingProfile)} className={`px-12 py-3.5 rounded-full font-black text-white transition-all ${currentUser.sentRequests?.includes(viewingProfile.uid) ? 'bg-slate-200' : 'bg-indigo-600 shadow-xl shadow-indigo-100'}`}>
+                  {currentUser.sentRequests?.includes(viewingProfile.uid) ? 'Invitation Sent' : 'Connect'}
+                </button>
               )}
+            </div>
+
+            {isEditingProfile && (
+              <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
+                <div className="bg-white w-full max-w-sm p-8 rounded-[32px] shadow-2xl space-y-4">
+                  <h2 className="text-2xl font-serif font-black text-indigo-950">Update Profile</h2>
+                  <input type="text" value={editName} onChange={e=>setEditName(e.target.value)} placeholder="Full Name" className="w-full p-4 bg-slate-50 border rounded-xl outline-none" />
+                  <textarea value={editBio} onChange={e=>setEditBio(e.target.value)} placeholder="Tell us about yourself..." className="w-full p-4 bg-slate-50 border rounded-xl outline-none min-h-[100px] resize-none" />
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={handleEditProfile} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black">Save</button>
+                    <button onClick={()=>setIsEditingProfile(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-1 rounded-3xl overflow-hidden border border-slate-50">
+              {profilePosts.map(p => (
+                <div key={p.id} className="aspect-square bg-slate-50 relative group cursor-pointer overflow-hidden">
+                  {p.image ? <img src={p.image} className="w-full h-full object-cover transition-transform group-hover:scale-110" /> : <div className="p-3 text-[10px] text-slate-300 font-medium">{p.content}</div>}
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {activeTab === 'friends' && (
-          <div className="space-y-12 animate-slide-up">
-            <h1 className="text-6xl font-black tracking-tight flex items-center space-x-6">
-              <span>Community Members</span>
-              <div className="h-1.5 bg-indigo-600 flex-1 rounded-full opacity-10"></div>
-            </h1>
-            <div className="bg-white p-12 rounded-[60px] shadow-2xl space-y-8 border-8 border-white">
-              <h2 className="text-3xl font-black text-indigo-950 ml-2">Find someone by phone</h2>
-              <div className="flex space-x-6">
-                <select value={friendSearchCode} onChange={e=>setFriendSearchCode(e.target.value)} className="p-8 text-3xl border-4 border-slate-50 rounded-[35px] bg-slate-50 font-black outline-none cursor-pointer hover:border-indigo-100">
-                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
-                </select>
-                <input 
-                  type="tel" 
-                  placeholder="123 4567" 
-                  value={friendSearchPhone} 
-                  onChange={e=>setFriendSearchPhone(e.target.value)} 
-                  onKeyDown={e=>e.key === 'Enter' && handleSearchByPhone()}
-                  className="flex-1 p-8 text-4xl border-4 border-slate-50 bg-slate-50 focus:bg-white focus:border-indigo-500 rounded-[35px] outline-none transition-all font-black placeholder-slate-200" 
-                />
-                <button onClick={handleSearchByPhone} className="p-10 bg-indigo-600 text-white rounded-[40px] active-scale shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all"><ICONS.Search className="w-12 h-12" /></button>
-              </div>
+          <div className="space-y-8 animate-fade-in">
+            <div className="flex bg-slate-100 p-1 rounded-2xl">
+              <button onClick={()=>setNeighborTab('all')} className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${neighborTab === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>All Neighbors</button>
+              <button onClick={()=>setNeighborTab('groups')} className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${neighborTab === 'groups' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Groups</button>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-              {(searchResults.length > 0 ? searchResults : users).filter(u=>u.uid!==currentUser.uid).map(u => (
-                <div key={u.id} className="bg-white p-12 rounded-[65px] shadow-xl flex flex-col items-center text-center space-y-8 border-4 border-white hover:border-indigo-100 transition-all group relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
-                  <div className="relative z-10">
-                    <img src={u.avatar} className="w-40 h-40 rounded-[45px] border-8 border-white shadow-2xl group-hover:scale-105 transition-transform duration-500 object-cover bg-slate-50" alt={u.name} />
-                    {currentUser.following?.includes(u.uid) && <div className="absolute -top-4 -right-4 bg-green-500 text-white p-3 rounded-full border-4 border-white shadow-xl animate-bounce"><ICONS.UserCheck className="w-8 h-8" /></div>}
-                  </div>
-                  <div className="flex-1 z-10">
-                    <h3 className="text-5xl font-black leading-tight text-indigo-950">{u.name}</h3>
-                    <p className="text-3xl font-bold text-indigo-600/50 mt-2">{u.phoneNumber}</p>
-                    <p className="text-2xl font-medium text-slate-400 mt-6 line-clamp-2 italic px-4 font-serif">"{u.bio || "Hello neighbor!"}"</p>
-                  </div>
-                  <div className="flex w-full space-x-6 pt-6 z-10">
-                    <button onClick={()=>handleToggleFollow(u.uid)} className={`flex-1 py-6 rounded-[30px] font-black text-2xl transition-all shadow-xl active-scale hover:scale-105 ${currentUser.following?.includes(u.uid) ? 'bg-slate-100 text-slate-500 border-4 border-slate-200 shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                      {currentUser.following?.includes(u.uid) ? 'Following' : 'Follow'}
-                    </button>
-                    <button onClick={()=>startNewGame('tictactoe', u.uid)} className="px-10 py-6 bg-green-50 text-green-700 rounded-[30px] font-black text-2xl border-4 border-green-100 active-scale shadow-sm hover:shadow-md transition-all">Play</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {activeTab === 'games' && (
-          <div className="space-y-12 animate-slide-up">
-            <h1 className="text-6xl font-black tracking-tight">Neighborhood Games</h1>
-            {activeGame ? (
-              <div className="bg-white p-16 rounded-[70px] shadow-2xl text-center space-y-12 border-8 border-indigo-50 relative overflow-hidden">
-                <div className="space-y-4">
-                  <h2 className="text-7xl font-black text-indigo-950 tracking-tighter">Tic Tac Toe</h2>
-                  <p className="text-3xl font-bold text-slate-400">Playing with <span className="text-indigo-600">{users.find(u=>u.uid === activeGame.players.find(p=>p!==currentUser.uid))?.name}</span></p>
-                </div>
-
-                {activeGame.status === 'finished' ? (
-                  <div className="space-y-10 animate-fade-in py-10">
-                    <div className="text-[12rem] animate-bounce">🏆</div>
-                    <h3 className="text-7xl font-black text-indigo-900">
-                      {activeGame.winner === currentUser.uid ? "You Won!" : (activeGame.winner === 'draw' ? "It's a Draw!" : "A close game! Try again!")}
-                    </h3>
-                    <button onClick={async ()=>await deleteDoc(doc(db, "gameSessions", activeGame.id))} className="px-20 py-8 bg-indigo-600 text-white text-4xl font-black rounded-[40px] shadow-2xl active-scale hover:bg-indigo-700 transition-all">Back to Menu</button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-3 gap-8 max-w-md mx-auto p-10 bg-indigo-50 rounded-[60px] shadow-inner border-4 border-indigo-100">
-                      {activeGame.boardState.map((cell, idx) => (
-                        <button 
-                          key={idx} 
-                          onClick={()=>handleGameMove(idx)} 
-                          className={`h-40 bg-white rounded-[40px] text-8xl font-black flex items-center justify-center shadow-xl active-scale transition-all border-4 ${!cell && activeGame.currentTurn === currentUser.uid ? 'border-indigo-300 hover:border-indigo-500' : 'border-transparent'}`}
-                        >
-                          <span className={cell === 'X' ? 'text-indigo-600 drop-shadow-sm' : 'text-rose-500 drop-shadow-sm'}>{cell}</span>
-                        </button>
-                      ))}
+            {neighborTab === 'all' ? (
+              <div className="space-y-3">
+                {users.filter(u=>u.uid!==currentUser.uid).map(u => (
+                  <div key={u.uid} className="bg-white p-5 rounded-[24px] border border-slate-50 flex items-center justify-between shadow-sm hover:border-indigo-100 transition-all">
+                    <div className="flex items-center gap-4 cursor-pointer" onClick={()=>{setViewingProfile(u); setActiveTab('profile')}}>
+                      <img src={u.avatar} className="w-14 h-14 rounded-full border shadow-sm" />
+                      <div>
+                        <p className="font-serif font-black text-indigo-950 text-lg leading-tight">{u.name}</p>
+                        <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">{u.location || 'Neighbor'}</p>
+                      </div>
                     </div>
-                    <div className={`p-10 rounded-[45px] text-5xl font-black shadow-lg transition-all ${activeGame.currentTurn === currentUser.uid ? 'bg-green-100 text-green-700 animate-pulse border-4 border-green-300' : 'bg-slate-100 text-slate-400 border-4 border-slate-200'}`}>
-                      {activeGame.currentTurn === currentUser.uid ? "Your Turn!" : "Friend is thinking..."}
-                    </div>
-                    <button onClick={async ()=>await updateDoc(doc(db, "gameSessions", activeGame.id), {status: 'finished', winner: activeGame.players.find(p=>p!==currentUser.uid)})} className="text-3xl font-black text-rose-300 hover:text-rose-500 transition-colors underline decoration-4 underline-offset-8 decoration-rose-50">Stop Game</button>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                {GAMES.map(game => (
-                  <div key={game.id} className="bg-white p-16 rounded-[75px] shadow-2xl text-center space-y-10 border-8 border-white hover:border-indigo-100 transition-all group overflow-hidden relative">
-                    <div className="absolute -bottom-10 -right-10 text-[15rem] opacity-5 font-black group-hover:scale-150 transition-transform duration-1000 select-none">{game.name[0]}</div>
-                    <div className="text-[10rem] drop-shadow-2xl group-hover:scale-110 transition-transform duration-700">{game.icon}</div>
-                    <div className="relative z-10">
-                      <h3 className="text-6xl font-black text-indigo-950 tracking-tighter">{game.name}</h3>
-                      <p className="text-3xl font-bold text-slate-300 mt-3 uppercase tracking-widest">{game.difficulty}</p>
-                    </div>
-                    <div className="space-y-6 relative z-10">
-                      <button onClick={()=>setActiveTab('friends')} className="w-full py-8 bg-indigo-600 text-white rounded-[40px] font-black text-3xl shadow-[0_20px_40px_-10px_rgba(79,70,229,0.3)] active-scale hover:bg-indigo-700">Invite a Neighbor</button>
-                      <button onClick={()=>handleTeachGame(game.name)} className="w-full py-6 bg-slate-50 text-slate-600 rounded-[35px] font-black text-2xl active-scale border-4 border-slate-100 hover:border-slate-200">Rule Book</button>
-                    </div>
+                    {currentUser.following?.includes(u.uid) ? (
+                      <span className="text-[10px] font-black text-slate-200 uppercase tracking-[.2em]">Connected</span>
+                    ) : (
+                      <button onClick={()=>handleRequestNeighbor(u)} className="p-3 text-indigo-600 bg-indigo-50/50 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all">
+                        {currentUser.sentRequests?.includes(u.uid) ? 'Sent' : <ICONS.Plus className="w-5 h-5" />}
+                      </button>
+                    )}
                   </div>
                 ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-serif font-black text-indigo-950">Community Groups</h2>
+                  <button onClick={()=>setIsCreatingGroup(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-full text-xs font-black shadow-lg shadow-indigo-100">
+                    <ICONS.Plus className="w-4 h-4" /> Create New
+                  </button>
+                </div>
+
+                {isCreatingGroup && (
+                  <div className="bg-white p-6 rounded-3xl border-2 border-indigo-100 space-y-4 mb-8">
+                    <input type="text" placeholder="Group Name (e.g. Garden Lovers)" value={groupName} onChange={e=>setGroupName(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl outline-none" />
+                    <textarea placeholder="What is this group about?" value={groupDesc} onChange={e=>setGroupDesc(e.target.value)} className="w-full p-4 bg-slate-50 rounded-xl outline-none h-24 resize-none" />
+                    <div className="flex gap-2">
+                      <button onClick={handleCreateGroup} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black">Create Group</button>
+                      <button onClick={()=>setIsCreatingGroup(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-4">
+                  {groups.length === 0 ? <p className="text-center py-20 text-slate-300 italic">No groups found. Start one today!</p> : groups.map(g => (
+                    <div key={g.id} className="bg-white p-6 rounded-[32px] border border-slate-100 flex items-center gap-5 shadow-sm">
+                      <img src={g.avatar} className="w-16 h-16 rounded-2xl shadow-inner" />
+                      <div className="flex-1">
+                        <h3 className="font-serif font-black text-indigo-950 text-lg leading-tight">{g.name}</h3>
+                        <p className="text-sm text-slate-400 line-clamp-1">{g.description}</p>
+                        <p className="text-[10px] text-slate-300 font-bold uppercase mt-1 tracking-wider">{g.members.length} Members</p>
+                      </div>
+                      <button className="px-5 py-2 bg-slate-900 text-white rounded-full text-[10px] font-black tracking-widest uppercase">Enter</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {activeTab === 'profile' && viewingProfile && (
-          <div className="space-y-12 animate-slide-up">
-            <div className="bg-white p-20 rounded-[80px] shadow-2xl text-center md:text-left md:flex items-center md:space-x-20 border-8 border-white relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-50/30 rounded-full -mr-64 -mt-64 blur-3xl select-none" />
-              <div className="relative inline-block mx-auto md:mx-0 z-10">
-                <img src={viewingProfile.avatar} className="w-80 h-80 rounded-[70px] border-[12px] border-white shadow-2xl object-cover bg-slate-50" alt={viewingProfile.name} />
-                {viewingProfile.uid === currentUser.uid && (
-                  <>
-                    <input type="file" ref={profilePicRef} hidden accept="image/*" onChange={handleProfilePicChange} />
-                    <button onClick={()=>profilePicRef.current?.click()} className="absolute -bottom-8 -right-8 bg-indigo-600 text-white p-8 rounded-full shadow-2xl border-8 border-white active-scale hover:bg-indigo-700 transition-all">
-                      {isUploading ? <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin"></div> : <ICONS.ImagePlus className="w-12 h-12" />}
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="mt-16 md:mt-0 flex-1 z-10">
-                <h1 className="text-9xl font-black text-indigo-950 tracking-tighter">{viewingProfile.name}</h1>
-                <p className="text-5xl font-bold text-indigo-600 mt-4 flex items-center justify-center md:justify-start">
-                  <span className="opacity-40 text-3xl mr-3 font-serif italic">#</span>
-                  {viewingProfile.phoneNumber}
-                </p>
-                
-                <div className="mt-12 relative group">
-                  {isEditingBio ? (
-                    <div className="space-y-6">
-                      <textarea 
-                        value={editableBio}
-                        onChange={(e) => setEditableBio(e.target.value)}
-                        className="w-full p-10 bg-indigo-50 rounded-[50px] italic font-serif text-4xl text-slate-700 shadow-inner leading-relaxed border-4 border-indigo-200 outline-none focus:border-indigo-400 min-h-[200px] resize-none"
-                        placeholder="Tell us a bit about yourself..."
-                      />
-                      <div className="flex space-x-4">
-                        <button onClick={handleSaveBio} className="flex-1 py-6 bg-green-600 text-white text-3xl font-black rounded-[30px] active-scale shadow-lg hover:bg-green-700 transition-all">
-                          {isUploading ? "Saving..." : "Save Bio"}
-                        </button>
-                        <button onClick={() => setIsEditingBio(false)} className="px-10 py-6 bg-slate-100 text-slate-500 text-3xl font-black rounded-[30px] active-scale">
-                          Cancel
-                        </button>
+        {activeTab === 'games' && (
+          <div className="space-y-8 animate-fade-in">
+            {gameMode === 'selection' && (
+              <>
+                <h2 className="text-2xl font-serif font-black text-indigo-950 mb-2">Game Tables</h2>
+                <div className="grid gap-6">
+                  {GAMES.map(g => (
+                    <div key={g.id} onClick={()=>{setSelectedGame(g); setGameMode('mode')}} className="bg-white p-8 rounded-[40px] border border-slate-100 flex items-center justify-between cursor-pointer hover:border-indigo-200 transition-all shadow-sm group">
+                      <div className="flex items-center gap-6">
+                        <span className="text-5xl group-hover:scale-110 transition-transform duration-500">{g.icon}</span>
+                        <div>
+                          <h3 className="font-serif font-black text-xl text-indigo-950">{g.name}</h3>
+                          <p className="text-sm text-slate-400 font-medium">{g.descriptionKey}</p>
+                        </div>
+                      </div>
+                      <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${g.difficulty === 'Easy' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
+                        {g.difficulty}
                       </div>
                     </div>
-                  ) : (
-                    <div className="relative">
-                      <div className="p-10 bg-indigo-50/50 rounded-[50px] italic font-serif text-4xl text-slate-700 shadow-inner leading-relaxed border-2 border-indigo-100/50">
-                        "{viewingProfile.bio || "Connecting with my community."}"
-                      </div>
-                      {viewingProfile.uid === currentUser.uid && (
-                        <button 
-                          onClick={() => {
-                            setEditableBio(viewingProfile.bio || "");
-                            setIsEditingBio(true);
-                          }}
-                          className="absolute -top-6 -right-6 p-4 bg-white text-indigo-600 rounded-full shadow-xl border-4 border-indigo-50 active-scale hover:scale-110 transition-all"
-                        >
-                          <ICONS.PenLine className="w-8 h-8" />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  ))}
                 </div>
+              </>
+            )}
 
-                {viewingProfile.uid === currentUser.uid && !isEditingBio && (
-                  <div className="mt-12 flex flex-wrap gap-6 justify-center md:justify-start">
-                    <button onClick={()=>signOut(auth)} className="px-16 py-7 bg-rose-50 text-rose-600 text-3xl font-black rounded-[35px] active-scale border-4 border-rose-100 shadow-sm transition-all hover:bg-rose-100">Sign Out</button>
-                    <button onClick={()=>setActiveTab('settings')} className="px-12 py-7 bg-slate-50 text-slate-600 text-3xl font-black rounded-[35px] active-scale border-4 border-slate-100 transition-all"><ICONS.Settings className="w-10 h-10" /></button>
-                  </div>
-                )}
+            {gameMode === 'mode' && selectedGame && (
+              <div className="text-center py-20 space-y-12">
+                <div className="space-y-4">
+                  <span className="text-8xl">{selectedGame.icon}</span>
+                  <h2 className="text-4xl font-serif font-black text-indigo-950">{selectedGame.name}</h2>
+                </div>
+                <div className="flex flex-col gap-4 max-w-xs mx-auto">
+                  <button onClick={()=>alert("Solo session started!")} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-xl shadow-xl shadow-indigo-100">Play Solo</button>
+                  <button onClick={()=>setGameMode('challenge')} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-xl">Challenge Neighbor</button>
+                  <button onClick={()=>setGameMode('selection')} className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-4">Back to Tables</button>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {activeTab === 'settings' && (
-          <div className="space-y-12 animate-slide-up">
-            <h1 className="text-6xl font-black tracking-tight">App Settings</h1>
-            <div className="bg-white p-16 rounded-[70px] shadow-2xl space-y-12 border-8 border-white">
-               <div className="flex justify-between items-center p-10 bg-slate-50 rounded-[45px] shadow-inner border-4 border-slate-100">
-                  <div className="space-y-2">
-                    <span className="text-4xl font-black text-indigo-950">App Language</span>
-                    <p className="text-xl font-bold text-slate-400">Change your experience</p>
-                  </div>
-                  <select 
-                    value={state.language} 
-                    onChange={e => setState({...state, language: e.target.value as Language})} 
-                    className="p-8 rounded-3xl text-3xl font-black bg-white border-4 border-indigo-100 outline-none cursor-pointer focus:border-indigo-400 shadow-sm"
-                  >
-                    {Object.entries(LANGUAGE_NAMES).map(([code, name]) => (<option key={code} value={code}>{name}</option>))}
-                  </select>
-               </div>
-               <div className="flex justify-between items-center p-10 bg-slate-50 rounded-[45px] shadow-inner border-4 border-slate-100">
-                  <div className="space-y-2">
-                    <span className="text-4xl font-black text-indigo-950">Audio Reader</span>
-                    <p className="text-xl font-bold text-slate-400">Hear summaries read aloud</p>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      const newVal = !state.voiceEnabled;
-                      setState({...state, voiceEnabled: newVal});
-                      if (newVal) speakText("Voice assistance turned on.");
-                    }} 
-                    className={`px-12 py-6 rounded-[30px] text-3xl font-black transition-all shadow-xl active-scale ${state.voiceEnabled ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border-4 border-slate-200 shadow-none'}`}
-                  >
-                    {state.voiceEnabled ? 'Enabled' : 'Disabled'}
-                  </button>
-               </div>
-            </div>
+            {gameMode === 'challenge' && selectedGame && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-serif font-black text-indigo-950">Challenge a Neighbor</h2>
+                  <button onClick={()=>setGameMode('mode')} className="text-slate-400 text-sm font-bold">Back</button>
+                </div>
+                <div className="grid gap-3">
+                  {users.filter(u => currentUser.following?.includes(u.uid)).length === 0 ? (
+                    <p className="text-center py-20 text-slate-300 italic">Connect with neighbors first to challenge them!</p>
+                  ) : users.filter(u => currentUser.following?.includes(u.uid)).map(u => (
+                    <div key={u.uid} className="bg-white p-4 rounded-2xl border border-slate-50 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <img src={u.avatar} className="w-10 h-10 rounded-full" />
+                        <p className="font-black text-indigo-900">{u.name}</p>
+                      </div>
+                      <button onClick={()=>alert(`Challenge sent to ${u.name}!`)} className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black">Invite</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
 
-      <nav className="fixed bottom-8 left-8 right-8 h-32 bg-white/95 backdrop-blur-3xl rounded-[60px] border-4 border-white shadow-[0_40px_100px_rgba(0,0,0,0.2)] flex items-center justify-around px-6 z-50">
-        <NavBtn icon={<ICONS.Home />} label="Home" active={activeTab === 'home'} onClick={()=>setActiveTab('home')} />
-        <NavBtn icon={<ICONS.Users />} label="Neighbors" active={activeTab === 'friends'} onClick={()=>setActiveTab('friends')} />
-        <NavBtn icon={<ICONS.Gamepad />} label="Games" active={activeTab === 'games'} onClick={()=>setActiveTab('games')} />
-        <NavBtn icon={<ICONS.Settings />} label="Settings" active={activeTab === 'settings'} onClick={()=>setActiveTab('settings')} />
+      <nav className="fixed bottom-0 inset-x-0 h-16 bg-white/90 backdrop-blur-md border-t flex items-center justify-around z-[100] px-4">
+        <NavBtn icon={<ICONS.Home />} active={activeTab === 'home'} onClick={()=>setActiveTab('home')} />
+        <NavBtn icon={<ICONS.Users />} active={activeTab === 'friends'} onClick={()=>setActiveTab('friends')} />
+        <NavBtn icon={<ICONS.Gamepad />} active={activeTab === 'games'} onClick={()=>{setActiveTab('games'); setGameMode('selection')}} />
+        <NavBtn icon={<ICONS.ProfileIcon />} active={activeTab === 'profile'} onClick={()=>{setViewingProfile(currentUser); setActiveTab('profile')}} />
       </nav>
 
-      {/* Popups */}
-      {(showRecap || isTeachingGame) && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-3xl z-[100] flex items-center justify-center p-8 animate-fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-[80px] p-20 space-y-16 animate-slide-up border-[16px] border-white shadow-[0_50px_100px_rgba(0,0,0,0.5)] relative">
-            <div className="flex justify-between items-center border-b-8 border-indigo-50 pb-10">
-              <h2 className="text-7xl font-black text-indigo-950 tracking-tighter">{isTeachingGame ? "Rule Book" : "Daily Digest"}</h2>
-              <button 
-                onClick={()=>{setShowRecap(false); setIsTeachingGame(false); window.speechSynthesis.cancel();}} 
-                className="p-6 hover:bg-slate-50 rounded-full active-scale transition-colors border-4 border-transparent hover:border-slate-100"
-              >
-                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeWidth="6" strokeLinecap="round"/></svg>
-              </button>
-            </div>
-            <div className="text-5xl leading-tight italic text-slate-700 max-h-[50vh] overflow-y-auto font-serif px-6 custom-scrollbar text-center md:text-left">
-              {isGeneratingRecap ? (
-                <div className="flex flex-col items-center py-24 space-y-8 animate-pulse">
-                  <ICONS.Radio className="w-24 h-24 text-indigo-400 animate-spin-slow" />
-                  <p className="font-sans font-black text-indigo-600 tracking-wide uppercase text-2xl">Transmitting stories...</p>
-                </div>
-              ) : (isTeachingGame ? gameTutorialText : recapText)}
-            </div>
-            <button 
-              onClick={()=>{setShowRecap(false); setIsTeachingGame(false); window.speechSynthesis.cancel();}} 
-              className="w-full py-10 bg-indigo-600 text-white text-5xl font-black rounded-[45px] shadow-2xl shadow-indigo-100 active-scale hover:bg-indigo-700 transition-all"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-      
-      <AIAssistant language={state.language} voiceEnabled={state.voiceEnabled} />
+      <AIAssistant language={'en'} />
     </div>
   );
 };
 
-const NavBtn: React.FC<{ icon: any, label: string, active: boolean, onClick: ()=>void }> = ({ icon, label, active, onClick }) => (
-  <button onClick={onClick} className={`flex-1 flex flex-col items-center justify-center space-y-2 transition-all active-scale group ${active ? 'text-indigo-600' : 'text-slate-300'}`}>
-    <div className={`p-4 rounded-3xl transition-all duration-500 ${active ? 'bg-indigo-50 shadow-inner' : 'group-hover:bg-slate-50'}`}>
-      {React.cloneElement(icon, { className: `w-14 h-14 ${active ? 'scale-110' : ''} transition-all duration-300` })}
-    </div>
-    <span className={`text-sm font-black uppercase tracking-widest ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
+const NavBtn: React.FC<{ icon: any, active: boolean, onClick: ()=>void }> = ({ icon, active, onClick }) => (
+  <button onClick={onClick} className={`p-3 rounded-2xl transition-all duration-300 ${active ? 'text-indigo-600 bg-indigo-50/50 scale-110' : 'text-slate-300 hover:text-slate-400'}`}>
+    {React.cloneElement(icon, { className: "w-7 h-7" })}
   </button>
 );
 

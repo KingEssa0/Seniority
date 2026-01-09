@@ -9,7 +9,8 @@ import {
   collectionGroup, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { 
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut 
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+  GoogleAuthProvider, signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { 
   getStorage, ref, uploadString, getDownloadURL 
@@ -39,5 +40,6 @@ export {
   collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, 
   updateDoc, doc, arrayUnion, arrayRemove, getDoc, getDocs, setDoc, where, limit,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
+  GoogleAuthProvider, signInWithPopup,
   ref, uploadString, getDownloadURL, collectionGroup, deleteDoc
 };

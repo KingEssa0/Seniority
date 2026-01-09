@@ -1,37 +1,49 @@
 
 export type Language = 'en' | 'es' | 'fr' | 'de' | 'it' | 'zh' | 'ur' | 'hi' | 'pa' | 'nl' | 'ar' | 'pt';
 
+export interface Notification {
+  id: string;
+  type: 'friend_request' | 'like' | 'comment' | 'challenge' | 'group_invite';
+  fromId: string;
+  fromName: string;
+  fromAvatar: string;
+  timestamp: any;
+  read: boolean;
+  relatedId?: string; 
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  description: string;
+  createdBy: string;
+  members: string[];
+  avatar: string;
+  createdAt: any;
+}
+
 export interface User {
   id: string;
   uid: string;
   name: string;
   avatar: string;
-  phoneNumber: string; // Full number with country code
+  phoneNumber: string;
   location: string;
   bio?: string;
-  following?: string[];
+  following?: string[]; 
   followers?: string[];
+  pendingRequests?: string[]; 
+  sentRequests?: string[]; 
   language?: Language;
 }
 
-export interface GameSession {
+export interface Comment {
   id: string;
-  gameId: string;
-  players: string[]; // UIDs
-  status: 'waiting' | 'playing' | 'finished';
-  currentTurn: string; // UID
-  boardState: any[];
-  winner?: string;
-  updatedAt: any;
-}
-
-export interface Circle {
-  id: string;
-  name: string;
-  icon: string;
-  color: string;
-  members: string[];
-  description?: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  content: string;
+  createdAt: any;
 }
 
 export interface Post {
@@ -44,15 +56,7 @@ export interface Post {
   image?: string;
   createdAt: any;
   likes: string[];
-  isMemory?: boolean;
-  circleId?: string;
-}
-
-export interface Message {
-  id: string;
-  senderId: string;
-  text: string;
-  createdAt: any;
+  comments?: Comment[];
 }
 
 export interface Game {
@@ -61,12 +65,4 @@ export interface Game {
   icon: string;
   descriptionKey: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
-}
-
-export interface AppState {
-  language: Language;
-  fontSize: 'normal' | 'large' | 'extra-large';
-  highContrast: boolean;
-  voiceEnabled: boolean;
-  user: User | null;
 }
