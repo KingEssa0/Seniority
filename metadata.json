@@ -1,0 +1,6 @@
+{
+  "name": "Seniority",
+  "description": "A warm, accessible, and simple social media platform designed specifically for seniors to connect, share memories, and find community.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
