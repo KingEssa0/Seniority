@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
   doc,
   updateDoc,
@@ -149,6 +149,7 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
       setCommentText('');
     } catch (err) {
       console.error("Comment submit error:", err);
+      handleFirestoreError(err, OperationType.CREATE, 'comments');
     } finally {
       setSubmittingComment(false);
     }

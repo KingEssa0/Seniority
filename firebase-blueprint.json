@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile schema",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "email": { "type": "string" },
+        "bio": { "type": "string" },
+        "hobbies": { "type": "array" },
+        "location": { "type": "string" }
+      },
+      "required": ["uid", "displayName", "photoURL", "email", "bio", "hobbies", "location"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Post schema",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "reactions": { "type": "object" },
+        "commentsCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "userName", "userPhoto", "content", "category", "reactions", "commentsCount", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Comment schema",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["postId", "userId", "userName", "userPhoto", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile information"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Heartwarming posts shared by seniors"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Heartwarming comments on posts"
+    }
+  }
+}

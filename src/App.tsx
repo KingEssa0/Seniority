@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot, getDocs, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { Post, UserProfile } from './types';
 import { INSPIRING_QUOTES, speakText, stopSpeaking } from './utils';
 
@@ -102,6 +102,11 @@ export default function App() {
             location: '',
           });
           setIsDemo(false);
+          try {
+            handleFirestoreError(err, OperationType.GET, `users/${firebaseUser.uid}`);
+          } catch (e) {
+            console.error("Handled Firestore user profile error:", e);
+          }
         }
       } else {
         // No Firebase user. If there's no demo user session either, keep user as null.
@@ -139,6 +144,11 @@ export default function App() {
       }
     }, (error) => {
       console.error("Posts subscription failed:", error);
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'posts');
+      } catch (e) {
+        console.error("Handled posts subscription error:", e);
+      }
     });
 
     return () => unsubscribe();

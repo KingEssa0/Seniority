@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUserOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isDemoUser(userId) {
+      return userId.startsWith("demo_") || userId == "demo_margaret" || userId == "demo_arthur" || userId == "demo_evelyn";
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isUserOwner(userId) || isDemoUser(userId) || !isSignedIn();
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if (isSignedIn() && request.resource.data.userId == request.auth.uid) || isDemoUser(request.resource.data.userId) || !isSignedIn();
+      allow update: if true; // Allowed for reactions (smile, love, support, inspiring) and commentsCount incrementing
+      allow delete: if (isSignedIn() && resource.data.userId == request.auth.uid) || isDemoUser(resource.data.userId) || !isSignedIn();
+    }
+
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if (isSignedIn() && request.resource.data.userId == request.auth.uid) || isDemoUser(request.resource.data.userId) || !isSignedIn();
+      allow delete: if (isSignedIn() && resource.data.userId == request.auth.uid) || isDemoUser(resource.data.userId) || !isSignedIn();
+    }
+  }
+}

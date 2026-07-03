@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { CURATED_IMAGES } from '../utils';
 import { Mic, MicOff, Image, Send, HelpCircle, AlertCircle, Smile } from 'lucide-react';
@@ -140,7 +140,9 @@ export default function CreatePostForm({ user, textSize, onPostCreated }: Create
       onPostCreated();
     } catch (err) {
       console.error('Error creating post: ', err);
-      alert('Could not publish your post. Please check your internet connection.');
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      alert(`Could not publish your post. Error: ${errorMessage}`);
+      handleFirestoreError(err, OperationType.CREATE, 'posts');
     } finally {
       setSubmitting(false);
     }
