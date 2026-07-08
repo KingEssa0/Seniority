@@ -13,6 +13,7 @@ import CreatePostForm from './components/CreatePostForm';
 import PostCard from './components/PostCard';
 import InterestCircles from './components/InterestCircles';
 import GoldenFriends from './components/GoldenFriends';
+import ActivityHub from './components/ActivityHub';
 
 // Icons
 import { Compass, Sparkles, BookOpen, Users, Star, MessageCircle, Info } from 'lucide-react';
@@ -31,7 +32,7 @@ export default function App() {
   });
 
   // Navigation & Filtering
-  const [activeTab, setActiveTab] = useState<'timeline' | 'circles' | 'friends' | 'memory-lane'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'circles' | 'friends' | 'memory-lane' | 'activity-hub'>('timeline');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -292,6 +293,19 @@ export default function App() {
             <BookOpen className="w-5 h-5 stroke-[2.5]" />
             <span>📸 Memory Lane</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('activity-hub')}
+            className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
+              activeTab === 'activity-hub'
+                ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_#1A1A1A] scale-105'
+                : 'bg-white text-[#1A1A1A] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#F3F1ED]'
+            }`}
+            id="tab-activity-hub"
+          >
+            <Star className="w-5 h-5 stroke-[2.5] text-[#FFD93D] fill-[#FFD93D]" />
+            <span>🎯 Golden Activity Hub</span>
+          </button>
         </div>
 
         {/* Outer Layout wrapper */}
@@ -452,6 +466,16 @@ export default function App() {
                   </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'activity-hub' && (
+              <ActivityHub
+                currentUser={user}
+                textSize={textSize}
+                onPostCreated={() => {
+                  // Reset or swap quote on success
+                }}
+              />
             )}
 
           </div>

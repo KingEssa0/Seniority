@@ -87,21 +87,21 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
     <>
       <header className="bg-white border-b-4 border-[#1A1A1A] py-4 px-6 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          {/* Left branding */}
+          {/* Left branding with an eye-catching, handcrafted Seniority Golden Sun & Blossom Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#FF6B6B] rounded-xl flex items-center justify-center border-2 border-[#1A1A1A]">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
-                <path d="M12 8l0 8" />
-                <path d="M8 12l8 0" />
-              </svg>
+            <div className="w-11 h-11 bg-[#FFD93D] rounded-2xl flex items-center justify-center border-3 border-[#1A1A1A] shadow-[2.5px_2.5px_0px_0px_rgba(26,26,26,1)] hover:rotate-6 transition-transform duration-300 relative select-none">
+              <span className="text-2xl">🌸</span>
+              <span className="absolute -top-1.5 -right-1.5 text-xs animate-pulse">☀️</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-black text-[#1A1A1A] tracking-tighter">
-                  SENIORITY
-                </h1>
-                <span className="bg-[#4ECDC4] text-[#1A1A1A] border-2 border-[#1A1A1A] text-xs px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-2xl sm:text-3xl font-black text-[#1A1A1A] tracking-tighter flex items-center gap-2">
+                    <span>SENIORITY</span>
+                    <span className="text-xl sm:text-2xl">🏡</span>
+                  </h1>
+                </div>
+                <span className="bg-[#4ECDC4] text-[#1A1A1A] border-2 border-[#1A1A1A] text-xs px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider shadow-[1.5px_1.5px_0px_0px_rgba(26,26,26,1)]">
                   Social Club
                 </span>
               </div>
