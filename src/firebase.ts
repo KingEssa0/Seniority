@@ -1,24 +1,35 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "emerald-ocean-jj1d7",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:341745223000:web:0944eb2606caea2e45112d",
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDtuXyBLjyzMwNnkFeG_u2ZePe1H-x6eqg",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "emerald-ocean-jj1d7.firebaseapp.com",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "emerald-ocean-jj1d7.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "341745223000",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "seniority-social",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:585247914931:web:c8f44a0abe73b9ab0029c6",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAAsv8nbvBIuGBZgqwNUnFN7khG99pjJ7Y",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "seniority-social.firebaseapp.com",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "seniority-social.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "585247914931",
+  measurementId: "G-R2H2MYN0BF"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
+// Initialize Analytics safely (works seamlessly even inside sandboxed browser iframes)
+isSupported().then((supported) => {
+  if (supported) {
+    getAnalytics(app);
+  }
+}).catch((e) => console.log("Analytics is not supported in this browser context:", e));
+
 // Initialize Auth
 export const auth = getAuth(app);
 
 // Initialize Firestore with the specific database ID from the config
-const dbId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-40876d33-e3ba-4f0b-80de-88495a658156";
+// Automatically defaults to '(default)' for the production project seniority-social
+const defaultDbId = firebaseConfig.projectId === "seniority-social" ? "(default)" : "ai-studio-40876d33-e3ba-4f0b-80de-88495a658156";
+const dbId = import.meta.env.VITE_FIREBASE_DATABASE_ID || defaultDbId;
 export const db = dbId === "(default)" ? getFirestore(app) : getFirestore(app, dbId);
 
 // Google Auth Provider
