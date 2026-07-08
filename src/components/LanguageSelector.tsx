@@ -13,7 +13,20 @@ const SUPPORTED_LANGUAGES = [
   { code: 'ru', name: 'Русский (Russian)', flag: '🇷🇺' },
   { code: 'hi', name: 'हिन्दी (Hindi)', flag: '🇮🇳' },
   { code: 'ar', name: 'العربية (Arabic)', flag: '🇸🇦' },
-  { code: 'ur', name: 'اردو (Urdu)', flag: '🇵🇰' }
+  { code: 'ur', name: 'اردو (Urdu)', flag: '🇵🇰' },
+  { code: 'ko', name: '한국어 (Korean)', flag: '🇰🇷' },
+  { code: 'vi', name: 'Tiếng Việt (Vietnamese)', flag: '🇻🇳' },
+  { code: 'tr', name: 'Türkçe (Turkish)', flag: '🇹🇷' },
+  { code: 'nl', name: 'Nederlands (Dutch)', flag: '🇳🇱' },
+  { code: 'pl', name: 'Polski (Polish)', flag: '🇵🇱' },
+  { code: 'sv', name: 'Svenska (Swedish)', flag: '🇸🇪' },
+  { code: 'tl', name: 'Tagalog (Filipino)', flag: '🇵🇭' },
+  { code: 'uk', name: 'Українська (Ukrainian)', flag: '🇺🇦' },
+  { code: 'el', name: 'Ελληνικά (Greek)', flag: '🇬🇷' },
+  { code: 'id', name: 'Bahasa Indonesia (Indonesian)', flag: '🇮🇩' },
+  { code: 'ro', name: 'Română (Romanian)', flag: '🇷🇴' },
+  { code: 'th', name: 'ไทย (Thai)', flag: '🇹🇭' },
+  { code: 'fa', name: 'فارسی (Persian)', flag: '🇮🇷' }
 ];
 
 export default function LanguageSelector() {
