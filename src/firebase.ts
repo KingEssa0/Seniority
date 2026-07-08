@@ -3,12 +3,12 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  projectId: "emerald-ocean-jj1d7",
-  appId: "1:341745223000:web:0944eb2606caea2e45112d",
-  apiKey: "AIzaSyDtuXyBLjyzMwNnkFeG_u2ZePe1H-x6eqg",
-  authDomain: "emerald-ocean-jj1d7.firebaseapp.com",
-  storageBucket: "emerald-ocean-jj1d7.firebasestorage.app",
-  messagingSenderId: "341745223000",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "emerald-ocean-jj1d7",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:341745223000:web:0944eb2606caea2e45112d",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDtuXyBLjyzMwNnkFeG_u2ZePe1H-x6eqg",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "emerald-ocean-jj1d7.firebaseapp.com",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "emerald-ocean-jj1d7.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "341745223000",
 };
 
 // Initialize Firebase
@@ -18,7 +18,8 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 // Initialize Firestore with the specific database ID from the config
-export const db = getFirestore(app, "ai-studio-40876d33-e3ba-4f0b-80de-88495a658156");
+const dbId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-40876d33-e3ba-4f0b-80de-88495a658156";
+export const db = dbId === "(default)" ? getFirestore(app) : getFirestore(app, dbId);
 
 // Google Auth Provider
 export const googleProvider = new GoogleAuthProvider();
