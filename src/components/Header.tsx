@@ -175,16 +175,6 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
               </button>
             </div>
 
-            {isDemo && (
-              <div className="mb-4 p-4 bg-[#FFD93D] border-3 border-[#1A1A1A] rounded-2xl text-[#1A1A1A] text-sm flex gap-3 shadow-[4px_4px_0px_0px_#1A1A1A]">
-                <ShieldAlert className="w-5 h-5 text-[#FF6B6B] flex-shrink-0" />
-                <div>
-                  <p className="font-black">Demo Account Notice</p>
-                  <p className="font-bold">You are signed in as a Demo Persona. Edits apply to your current session but won't overwrite database records.</p>
-                </div>
-              </div>
-            )}
-
             <form onSubmit={handleSaveProfile} className="space-y-4">
               {/* Profile Image View */}
               <div className="flex items-center gap-4 p-3 bg-[#FDFBF7] rounded-2xl border-3 border-[#1A1A1A] shadow-[4px_4px_0px_0px_#1A1A1A]">
@@ -196,7 +186,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
                 />
                 <div>
                   <h4 className="font-black text-base text-[#1A1A1A]">My Photo</h4>
-                  <p className="text-xs font-bold text-[#7D7870]">Linked securely through Google Account.</p>
+                  <p className="text-xs font-bold text-[#7D7870]">Your beautiful and secure club profile photo.</p>
                 </div>
               </div>
 

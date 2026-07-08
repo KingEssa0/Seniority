@@ -1,5 +1,6 @@
 import React from 'react';
 import { Type, Volume2, VolumeX, Sparkles, HelpCircle } from 'lucide-react';
+import LanguageSelector from './LanguageSelector';
 
 interface AccessibilityBarProps {
   textSize: 'normal' | 'large' | 'huge';
@@ -91,6 +92,9 @@ export default function AccessibilityBar({
               </>
             )}
           </button>
+
+          {/* Language Selector Dropdown */}
+          <LanguageSelector />
 
           {/* Simple Guide / Help Button */}
           <button

@@ -109,16 +109,9 @@ export default function App() {
           }
         }
       } else {
-        // No Firebase user. If there's no demo user session either, keep user as null.
-        // Let's check session storage for demo user
-        const storedDemo = sessionStorage.getItem('seniority_demoUser');
-        if (storedDemo) {
-          setUser(JSON.parse(storedDemo));
-          setIsDemo(true);
-        } else {
-          setUser(null);
-          setIsDemo(false);
-        }
+        // No Firebase user. Keep user as null.
+        setUser(null);
+        setIsDemo(false);
       }
       setLoading(false);
     });
@@ -132,16 +125,11 @@ export default function App() {
 
     const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(postsQuery, async (snapshot) => {
-      if (snapshot.empty) {
-        // Seed database if entirely empty
-        await seedDatabase();
-      } else {
-        const list: Post[] = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() } as Post);
-        });
-        setPosts(list);
-      }
+      const list: Post[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as Post);
+      });
+      setPosts(list);
     }, (error) => {
       console.error("Posts subscription failed:", error);
       try {
@@ -154,116 +142,9 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Seeding default heartwarming data to Firestore if completely empty
-  const seedDatabase = async () => {
-    try {
-      console.log("Seeding heartwarming starter posts to Firestore...");
-      const postsCol = collection(db, 'posts');
-      const commentsCol = collection(db, 'comments');
-
-      // Add Post 1: Margaret Jenkins
-      const doc1 = await addDoc(postsCol, {
-        userId: "demo_margaret",
-        userName: "Margaret Jenkins",
-        userPhoto: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150",
-        content: "Good morning, dear friends! 🌸 I spent my entire morning in the backyard tending to my golden-apricot roses. They are blooming so wonderfully this season. The sweet scent reminded me of my grandmother's garden in Kent when I was a young girl. May your day be filled with warm smiles and soft breezes.",
-        category: "Gardening",
-        imageUrl: "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&q=80&w=600",
-        reactions: {
-          smile: ["demo_arthur", "demo_evelyn"],
-          love: ["demo_arthur"],
-          support: [],
-          inspiring: ["demo_evelyn"]
-        },
-        commentsCount: 2,
-        createdAt: new Date(Date.now() - 3600000 * 4) // 4 hrs ago
-      });
-
-      // Add Comments for Post 1
-      await addDoc(commentsCol, {
-        postId: doc1.id,
-        userId: "demo_arthur",
-        userName: "Arthur Pendelton",
-        userPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150",
-        content: "These roses look absolutely splendid, Margaret! A true masterpiece of nature. Buster and I would love to wave hello on our evening walk.",
-        createdAt: new Date(Date.now() - 3600000 * 3)
-      });
-      await addDoc(commentsCol, {
-        postId: doc1.id,
-        userId: "demo_evelyn",
-        userName: "Evelyn Harris",
-        userPhoto: "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=150",
-        content: "Oh Margaret, you have such a green thumb! Simply lovely. Please save a small blossom for our next tea circle!",
-        createdAt: new Date(Date.now() - 3600000 * 2)
-      });
-
-      // Add Post 2: Arthur Pendelton
-      const doc2 = await addDoc(postsCol, {
-        userId: "demo_arthur",
-        userName: "Arthur Pendelton",
-        userPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150",
-        content: "Finished another small birdhouse in the workshop today! 🪵🏡 It's crafted from recycled cedar wood. I made sure the entryway hole is exactly 1.5 inches to welcome local bluebirds. My trusty dog, Buster, fell asleep under the workbench while I was sanding. Woodworking always brings me such focus and peace of mind.",
-        category: "Crafts",
-        imageUrl: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&q=80&w=600",
-        reactions: {
-          smile: ["demo_margaret"],
-          love: ["demo_evelyn"],
-          support: ["demo_margaret", "demo_evelyn"],
-          inspiring: ["demo_margaret"]
-        },
-        commentsCount: 1,
-        createdAt: new Date(Date.now() - 3600000 * 12) // 12 hrs ago
-      });
-
-      // Add Comment for Post 2
-      await addDoc(commentsCol, {
-        postId: doc2.id,
-        userId: "demo_margaret",
-        userName: "Margaret Jenkins",
-        userPhoto: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150",
-        content: "What fine craftsmanship, Arthur! The local bluebirds are lucky indeed to have such a cozy home.",
-        createdAt: new Date(Date.now() - 3600000 * 10)
-      });
-
-      // Add Post 3: Evelyn Harris
-      const doc3 = await addDoc(postsCol, {
-        userId: "demo_evelyn",
-        userName: "Evelyn Harris",
-        userPhoto: "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=150",
-        content: "Enjoying a hot cup of lavender-mint tea and a few rows of knitting this afternoon. 🧶☕ I'm knitting custom warm sweaters for the downtown rescue mission. Does anyone have recommendations for a good cozy mystery book? I just finished my last read and would love some suggestions!",
-        category: "Cooking",
-        imageUrl: "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&q=80&w=600",
-        reactions: {
-          smile: ["demo_margaret"],
-          love: ["demo_margaret", "demo_arthur"],
-          support: [],
-          inspiring: ["demo_arthur"]
-        },
-        commentsCount: 1,
-        createdAt: new Date(Date.now() - 3600000 * 24) // 1 day ago
-      });
-
-      // Add Comment for Post 3
-      await addDoc(commentsCol, {
-        postId: doc3.id,
-        userId: "demo_margaret",
-        userName: "Margaret Jenkins",
-        userPhoto: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150",
-        content: "I highly recommend any Agatha Christie classic, Evelyn! 'The Murder of Roger Ackroyd' is simply outstanding to read next to a warm radiator.",
-        createdAt: new Date(Date.now() - 3600000 * 20)
-      });
-
-    } catch (err) {
-      console.error("Database seeding failed:", err);
-    }
-  };
-
   const handleLoginSuccess = (loggedInUser: any, isDemoUser: boolean) => {
     setUser(loggedInUser);
-    setIsDemo(isDemoUser);
-    if (isDemoUser) {
-      sessionStorage.setItem('seniority_demoUser', JSON.stringify(loggedInUser));
-    }
+    setIsDemo(false);
     
     // Wave a warm voice greeting
     speakText(`Welcome to Seniority, ${loggedInUser.displayName?.split(' ')[0]}! Happy to have you in our club today.`);
@@ -272,14 +153,9 @@ export default function App() {
   const handleLogout = async () => {
     try {
       stopSpeaking();
-      if (isDemo) {
-        sessionStorage.removeItem('seniority_demoUser');
-        setUser(null);
-        setIsDemo(false);
-      } else {
-        await signOut(auth);
-        setUser(null);
-      }
+      await signOut(auth);
+      setUser(null);
+      setIsDemo(false);
     } catch (err) {
       console.error("Sign-out failed:", err);
     }
@@ -629,7 +505,7 @@ export default function App() {
       {/* 2026 Copyright block */}
       <footer className="bg-[#F3F1ED] border-t-4 border-[#1A1A1A] py-8 text-center text-[#1A1A1A] font-bold text-sm mt-12">
         <p className="mb-2">🌸 Seniority Seniors Social Club • Built for Comfort & Connection</p>
-        <p className="text-xs text-[#7D7870] font-black">Securely backed by real Firebase authentication and cloud databases.</p>
+        <p className="text-xs text-[#7D7870] font-black">Connecting our golden generation with security, comfort, and absolute peace of mind.</p>
       </footer>
 
       {/* Tutorial / Help Overlay Dialog */}
