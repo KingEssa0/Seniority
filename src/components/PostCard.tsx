@@ -329,7 +329,7 @@ export default function PostCard({ post, currentUser, textSize, audioGuide, curr
 
       {/* Post Body Content */}
       <div className="mb-4">
-        <div className={`text-[#1A1A1A] font-bold leading-relaxed break-words whitespace-pre-wrap ${getTextSizeClass('text-lg')}`} id={`post-content-${post.id}`}>
+        <div className={`text-[#1A1A1A] font-bold leading-relaxed break-words ${getTextSizeClass('text-lg')}`} id={`post-content-${post.id}`}>
           <ReactMarkdown
             components={{
               p: ({ children }) => <p className="mb-2">{children}</p>,

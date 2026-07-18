@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
-import { Smile, Hand, MapPin, Check, Plus, Users, Sparkles, Search, Heart, UserMinus } from 'lucide-react';
+import { Smile, Hand, MapPin, Check, Plus, Users, Sparkles, Search, Heart, UserMinus, Bell } from 'lucide-react';
 import { speakText } from '../utils';
 import { UI_TRANSLATIONS } from '../translations';
+import { subscribeToPushNotifications } from '../utils/pushNotifications';
 
 interface GoldenFriendsProps {
   currentUser: any;
@@ -24,10 +25,47 @@ export default function GoldenFriends({
   const [loading, setLoading] = useState(true);
   const [friendsList, setFriendsList] = useState<string[]>([]);
   const [waveTarget, setWaveTarget] = useState<string | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [registeringNotifications, setRegisteringNotifications] = useState(false);
+  const [notificationStatusMsg, setNotificationStatusMsg] = useState<string | null>(null);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
   
   // Search and Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'friends'>('all');
+
+  // Check notification permission state on mount
+  useEffect(() => {
+    if (!('Notification' in window)) {
+      setNotificationPermission('unsupported');
+    } else {
+      const permission = Notification.permission;
+      setNotificationPermission(permission);
+      if (permission === 'default') {
+        setShowNotificationModal(true);
+      }
+    }
+  }, []);
+
+  const handleEnableNotifications = async () => {
+    if (!currentUser) return;
+    setRegisteringNotifications(true);
+    setNotificationStatusMsg(null);
+    speakText("Requesting your approval to send notifications to your device.");
+    
+    const res = await subscribeToPushNotifications(currentUser.uid);
+    setRegisteringNotifications(false);
+    setShowNotificationModal(false);
+    
+    if (res.success) {
+      setNotificationPermission('granted');
+      setNotificationStatusMsg("Splendid! Push notifications are successfully configured.");
+      speakText("Perfect! You will now receive a beautiful notification whenever someone waves or connects with you, even if the website is closed.");
+    } else {
+      setNotificationStatusMsg(`Could not activate notifications: ${res.error}`);
+      speakText(`Notification setup could not be completed: ${res.error}`);
+    }
+  };
 
   // Real-time listener for current user's friends list
   useEffect(() => {
@@ -154,17 +192,56 @@ export default function GoldenFriends({
       await setDoc(doc(db, 'users', currentUser.uid), {
         friends: updatedFriends
       }, { merge: true });
+
+      // Trigger Push Notification to recipient device if they have subscriptions
+      if (!alreadyFriend) {
+        const targetUser = users.find(u => u.uid === uid);
+        if (targetUser && targetUser.pushSubscriptions && targetUser.pushSubscriptions.length > 0) {
+          try {
+            await fetch('/api/send-push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                subscriptions: targetUser.pushSubscriptions,
+                title: 'New Friend Connected! 🤝',
+                body: `${currentUser.displayName || 'A neighbor'} added you as a friend on Seniority!`,
+                url: '/'
+              })
+            });
+          } catch (pushErr) {
+            console.error("Failed to trigger push notification:", pushErr);
+          }
+        }
+      }
     } catch (err) {
       console.error("Failed to update friends in Firestore:", err);
     }
   };
 
-  const handleWave = (name: string) => {
+  const handleWave = async (uid: string, name: string) => {
     setWaveTarget(name);
     speakText(`Sending a warm waving hand hello to ${name}!`);
     setTimeout(() => {
       setWaveTarget(null);
     }, 4000);
+
+    const targetUser = users.find(u => u.uid === uid);
+    if (targetUser && targetUser.pushSubscriptions && targetUser.pushSubscriptions.length > 0) {
+      try {
+        await fetch('/api/send-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscriptions: targetUser.pushSubscriptions,
+            title: 'Warm Wave Hello! 👋',
+            body: `${currentUser.displayName || 'A neighbor'} waved hello to you! Click to say hi back!`,
+            url: '/'
+          })
+        });
+      } catch (pushErr) {
+        console.error("Failed to send wave push notification:", pushErr);
+      }
+    }
   };
 
   // Filter and search logic
@@ -275,7 +352,7 @@ export default function GoldenFriends({
                   {/* Tiny Actions */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
-                      onClick={() => handleWave(senior.displayName)}
+                      onClick={() => handleWave(senior.uid, senior.displayName)}
                       className="bg-[#FFD93D] hover:bg-[#ffe066] border-2 border-[#1A1A1A] text-[#1A1A1A] p-2 rounded-lg shadow-[1.5px_1.5px_0px_0px_#1A1A1A] active:translate-y-0.5 cursor-pointer"
                       title={`Wave hello to ${senior.displayName}`}
                     >
@@ -336,6 +413,45 @@ export default function GoldenFriends({
       {waveTarget && (
         <div className="mb-6 p-4 bg-[#FFD93D] border-3 border-[#1A1A1A] rounded-2xl text-center text-[#1A1A1A] font-black text-sm shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] animate-bounce">
           👋 {t('waveSent')} {waveTarget}! 😊
+        </div>
+      )}
+
+      {/* Push Notification Helper Banner */}
+      {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
+        <div className="mb-6 p-4 bg-[#F0FDF4] border-3 border-[#1A1A1A] rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
+          <div className="flex items-start gap-3 flex-1">
+            <div className="w-10 h-10 bg-[#4ECDC4] rounded-xl flex items-center justify-center border-2 border-[#1A1A1A] shrink-0 shadow-[1.5px_1.5px_0px_0px_rgba(26,26,26,1)]">
+              <Bell className="w-5 h-5 text-[#1A1A1A]" />
+            </div>
+            <div>
+              <h4 className="font-black text-[#1A1A1A] text-sm flex items-center gap-1.5">
+                🔔 Get Phone & Computer Alerts!
+              </h4>
+              <p className="text-xs text-[#5D5850] font-bold mt-0.5 leading-relaxed">
+                Receive instant notifications when friendly neighbors wave at you or connect with you — even if your web browser is closed! Perfect for staying in touch.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowNotificationModal(true)}
+            disabled={registeringNotifications}
+            className="w-full md:w-auto bg-[#FFD93D] hover:bg-[#ffe066] disabled:bg-gray-200 text-[#1A1A1A] border-3 border-[#1A1A1A] px-4 py-2.5 rounded-xl text-xs font-black shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all cursor-pointer whitespace-nowrap active:translate-y-0.5"
+          >
+            {registeringNotifications ? '⏳ Enabling...' : '🔔 Enable Notifications'}
+          </button>
+        </div>
+      )}
+
+      {notificationStatusMsg && (
+        <div className="mb-6 p-4 bg-[#EFF6FF] border-3 border-[#1A1A1A] rounded-2xl flex items-center gap-2.5 text-xs text-[#1A1A1A] font-black shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
+          <span>📢</span>
+          <span className="flex-1">{notificationStatusMsg}</span>
+          <button 
+            onClick={() => setNotificationStatusMsg(null)}
+            className="ml-auto text-gray-500 hover:text-black font-black cursor-pointer px-1.5"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -475,7 +591,7 @@ export default function GoldenFriends({
 
                     {/* Wave button */}
                     <button
-                      onClick={() => handleWave(senior.displayName)}
+                      onClick={() => handleWave(senior.uid, senior.displayName)}
                       className="bg-[#FFD93D] hover:bg-[#ffe066] border-3 border-[#1A1A1A] text-[#1A1A1A] font-black px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-all hover:translate-y-0.5 hover:translate-x-0.5 hover:shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] shadow-[3px_3px_0px_0px_rgba(26,26,26,1)]"
                       id={`btn-wave-${senior.uid}`}
                     >
@@ -510,6 +626,54 @@ export default function GoldenFriends({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Modern, friendly Custom Modal Popup for Notification Permission */}
+      {showNotificationModal && (
+        <div className="fixed inset-0 bg-[#1A1A1A]/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" id="notification-prompt-modal">
+          <div 
+            className="bg-[#FDFBF7] border-4 border-[#1A1A1A] rounded-3xl p-6 max-w-md w-full shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] transition-all transform scale-100"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="text-center">
+              <div className="w-16 h-16 bg-[#FFD93D] rounded-2xl mx-auto flex items-center justify-center border-3 border-[#1A1A1A] shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] mb-4">
+                <Bell className="w-8 h-8 text-[#1A1A1A] stroke-[2.5]" />
+              </div>
+              
+              <h3 className="text-2xl font-black text-[#1A1A1A] mb-2">
+                Allow notifications? 🔔
+              </h3>
+              
+              <p className="text-sm font-bold text-[#5D5850] mb-6 leading-relaxed">
+                Arey, friendly neighbor! We want to notify you instantly when sweet neighbors wave at you or connect with you — even when your browser is closed! Very beautiful to stay in touch, na? Please allow!
+              </p>
+              
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleEnableNotifications}
+                  disabled={registeringNotifications}
+                  className="w-full bg-[#4ECDC4] hover:bg-[#3db8af] disabled:bg-gray-300 text-[#1A1A1A] border-3 border-[#1A1A1A] py-3 rounded-2xl font-black text-sm shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] active:translate-y-0.5 transition-all cursor-pointer"
+                  id="btn-allow-notifications-confirm"
+                >
+                  {registeringNotifications ? "⏳ Activating..." : "Yes, Allow! 👍"}
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setShowNotificationModal(false);
+                    speakText("No problem, friend! You can always activate notifications later using the banner.");
+                  }}
+                  disabled={registeringNotifications}
+                  className="w-full bg-[#FF6B6B] hover:bg-[#ff5252] disabled:opacity-50 text-white border-3 border-[#1A1A1A] py-3 rounded-2xl font-black text-sm shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] active:translate-y-0.5 transition-all cursor-pointer"
+                  id="btn-allow-notifications-cancel"
+                >
+                  Maybe Later ❌
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

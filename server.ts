@@ -1,16 +1,87 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import webpush from "web-push";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+// Helper to get or generate VAPID keys for push notifications
+function getOrCreateVapidKeys() {
+  const keysPath = path.join(process.cwd(), 'vapid-keys.json');
+  if (fs.existsSync(keysPath)) {
+    try {
+      const content = fs.readFileSync(keysPath, 'utf-8');
+      return JSON.parse(content);
+    } catch (e) {
+      console.error("Failed to read existing VAPID keys, generating new ones:", e);
+    }
+  }
+
+  // Generate new keys
+  const keys = webpush.generateVAPIDKeys();
+  try {
+    fs.writeFileSync(keysPath, JSON.stringify(keys, null, 2), 'utf-8');
+    console.log("Generated and persisted new VAPID keys to:", keysPath);
+  } catch (e) {
+    console.error("Failed to save generated VAPID keys to disk:", e);
+  }
+  return keys;
+}
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Set up VAPID details for web-push
+  const vapidKeys = getOrCreateVapidKeys();
+  webpush.setVapidDetails(
+    'mailto:support@senioritysocial.club',
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+  );
+
+  // Endpoint to fetch VAPID public key for device subscription
+  app.get("/api/vapid-public-key", (req, res) => {
+    res.json({ publicKey: vapidKeys.publicKey });
+  });
+
+  // Secure API endpoint to deliver push notification payloads to target devices
+  app.post("/api/send-push", async (req, res) => {
+    try {
+      const { subscriptions, title, body, url } = req.body;
+      if (!subscriptions || !Array.isArray(subscriptions) || subscriptions.length === 0) {
+        return res.json({ status: "skipped", message: "No active subscriptions to notify." });
+      }
+
+      const payload = JSON.stringify({
+        title: title || "Seniority Club",
+        body: body || "You have a new update!",
+        url: url || "/"
+      });
+
+      const promises = subscriptions.map(async (sub) => {
+        try {
+          await webpush.sendNotification(sub, payload);
+          return { success: true };
+        } catch (err: any) {
+          // Log issues like expired subscriptions but do not fail the entire batch
+          console.warn("Failed sending push to a subscription:", err.message);
+          return { success: false, error: err.message };
+        }
+      });
+
+      const results = await Promise.all(promises);
+      res.json({ status: "completed", results });
+    } catch (error: any) {
+      console.error("Push API error:", error);
+      res.status(500).json({ error: error.message || "Failed to deliver push notifications" });
+    }
+  });
 
   // Gemini client initialization on the server using process.env.GEMINI_API_KEY
   // with correct user-agent telemetry header
