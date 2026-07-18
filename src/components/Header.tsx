@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { LogOut, User, MapPin, Sparkles, Heart, Smile, Check, ShieldAlert } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { UI_TRANSLATIONS } from '../translations';
 
 interface HeaderProps {
   user: any;
@@ -9,9 +10,10 @@ interface HeaderProps {
   onLogout: () => void;
   textSize: 'normal' | 'large' | 'huge';
   quote: string;
+  currentLang: string;
 }
 
-export default function Header({ user, isDemo, onLogout, textSize, quote }: HeaderProps) {
+export default function Header({ user, isDemo, onLogout, textSize, quote, currentLang }: HeaderProps) {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [displayName, setDisplayName] = useState(user.displayName || '');
   const [bio, setBio] = useState(user.bio || '');
@@ -83,9 +85,13 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
     }
   };
 
+  const t = (key: string): string => {
+    return UI_TRANSLATIONS[currentLang]?.[key] || UI_TRANSLATIONS['en']?.[key] || key;
+  };
+
   return (
     <>
-      <header className="bg-white border-b-4 border-[#1A1A1A] py-4 px-6 sticky top-0 z-40">
+      <header className="bg-white border-b-4 border-[#1A1A1A] py-4 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           {/* Left branding with an eye-catching, handcrafted Seniority Golden Sun & Blossom Logo */}
           <div className="flex items-center gap-3">
@@ -97,7 +103,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <h1 className="text-2xl sm:text-3xl font-black text-[#1A1A1A] tracking-tighter flex items-center gap-2">
-                    <span>SENIORITY</span>
+                    <span>{t('appTitle')}</span>
                     <span className="text-xl sm:text-2xl">🏡</span>
                   </h1>
                 </div>
@@ -106,7 +112,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
                 </span>
               </div>
               <p className="text-[10px] text-[#7D7870] font-black tracking-widest uppercase mt-0.5">
-                Connecting Our Golden Generation
+                {t('appSub')}
               </p>
             </div>
           </div>
@@ -152,7 +158,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
               id="btn-logout"
             >
               <LogOut className="w-4 h-4 stroke-[3]" />
-              <span className="hidden sm:inline">Sign Out</span>
+              <span className="hidden sm:inline">{t('signOut')}</span>
             </button>
           </div>
         </div>
@@ -165,7 +171,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
             <div className="flex items-center justify-between border-b-4 border-[#1A1A1A] pb-4 mb-4">
               <div className="flex items-center gap-2.5 text-[#1A1A1A]">
                 <User className="w-7 h-7 text-[#FF6B6B]" />
-                <h3 className="text-xl sm:text-2xl font-black">My Club Profile Card</h3>
+                <h3 className="text-xl sm:text-2xl font-black">{t('myProfile')}</h3>
               </div>
               <button
                 onClick={() => setShowProfileModal(false)}
@@ -192,7 +198,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
 
               {/* Name field */}
               <div>
-                <label className="block text-sm font-black text-[#1A1A1A] mb-1">My Full Name:</label>
+                <label className="block text-sm font-black text-[#1A1A1A] mb-1">{t('fullName')}</label>
                 <input
                   type="text"
                   required
@@ -204,7 +210,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
 
               {/* Location field */}
               <div>
-                <label className="block text-sm font-black text-[#1A1A1A] mb-1">Where I Live (Town/State):</label>
+                <label className="block text-sm font-black text-[#1A1A1A] mb-1">{t('whereILive')}</label>
                 <input
                   type="text"
                   placeholder="e.g., Seattle, WA"
@@ -216,7 +222,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
 
               {/* Bio field */}
               <div>
-                <label className="block text-sm font-black text-[#1A1A1A] mb-1">My Greetings / About Me:</label>
+                <label className="block text-sm font-black text-[#1A1A1A] mb-1">{t('myBio')}</label>
                 <textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
@@ -227,7 +233,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
 
               {/* Hobbies Checklist */}
               <div>
-                <label className="block text-sm font-black text-[#1A1A1A] mb-2">My Favorite Activities (Select to share with friends):</label>
+                <label className="block text-sm font-black text-[#1A1A1A] mb-2">{t('myHobbies')}</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {availableHobbies.map((hobby) => {
                     const isSelected = selectedHobbies.includes(hobby);
@@ -265,7 +271,7 @@ export default function Header({ user, isDemo, onLogout, textSize, quote }: Head
                   className="px-6 py-2.5 rounded-xl font-black bg-[#FF6B6B] hover:bg-[#ff5252] text-white border-3 border-[#1A1A1A] shadow-[4px_4px_0px_0px_#1A1A1A] cursor-pointer"
                   id="btn-save-profile-submit"
                 >
-                  {saving ? 'Saving...' : 'Save Profile ✓'}
+                  {saving ? 'Saving...' : t('saveProfile')}
                 </button>
               </div>
             </form>

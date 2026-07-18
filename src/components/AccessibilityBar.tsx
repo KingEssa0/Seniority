@@ -8,6 +8,8 @@ interface AccessibilityBarProps {
   audioGuide: boolean;
   setAudioGuide: (active: boolean) => void;
   onShowTutorial: () => void;
+  currentLang: string;
+  onLanguageChange: (langCode: string) => void;
 }
 
 export default function AccessibilityBar({
@@ -16,9 +18,11 @@ export default function AccessibilityBar({
   audioGuide,
   setAudioGuide,
   onShowTutorial,
+  currentLang,
+  onLanguageChange,
 }: AccessibilityBarProps) {
   return (
-    <div className="bg-[#F3F1ED] border-b-4 border-[#1A1A1A] py-3.5 px-4 shadow-sm">
+    <div className="bg-[#F3F1ED] border-b-4 border-[#1A1A1A] py-3.5 px-4 shadow-sm relative z-50">
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Left Side: Welcoming accessibility label */}
         <div className="flex items-center gap-2.5 text-[#1A1A1A]">
@@ -94,7 +98,7 @@ export default function AccessibilityBar({
           </button>
 
           {/* Language Selector Dropdown */}
-          <LanguageSelector />
+          <LanguageSelector currentLang={currentLang} onLanguageChange={onLanguageChange} />
 
           {/* Simple Guide / Help Button */}
           <button

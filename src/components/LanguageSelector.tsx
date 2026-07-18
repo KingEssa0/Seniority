@@ -1,97 +1,46 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Globe, Check, ChevronDown } from 'lucide-react';
 
-const SUPPORTED_LANGUAGES = [
+export const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Español (Spanish)', flag: '🇪🇸' },
-  { code: 'fr', name: 'Français (French)', flag: '🇫🇷' },
-  { code: 'de', name: 'Deutsch (German)', flag: '🇩🇪' },
-  { code: 'it', name: 'Italiano (Italian)', flag: '🇮🇹' },
-  { code: 'pt', name: 'Português (Portuguese)', flag: '🇵🇹' },
+  { code: 'es', name: 'Español', flag: '🇪🇸' },
+  { code: 'fr', name: 'Français', flag: '🇫🇷' },
+  { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
+  { code: 'it', name: 'Italiano', flag: '🇮🇹' },
+  { code: 'pt', name: 'Português', flag: '🇵🇹' },
   { code: 'zh-CN', name: '中文 (Chinese)', flag: '🇨🇳' },
-  { code: 'ja', name: '日本語 (Japanese)', flag: '🇯🇵' },
-  { code: 'ru', name: 'Русский (Russian)', flag: '🇷🇺' },
-  { code: 'hi', name: 'हिन्दी (Hindi)', flag: '🇮🇳' },
-  { code: 'ar', name: 'العربية (Arabic)', flag: '🇸🇦' },
-  { code: 'ur', name: 'اردو (Urdu)', flag: '🇵🇰' },
-  { code: 'ko', name: '한국어 (Korean)', flag: '🇰🇷' },
-  { code: 'vi', name: 'Tiếng Việt (Vietnamese)', flag: '🇻🇳' },
-  { code: 'tr', name: 'Türkçe (Turkish)', flag: '🇹🇷' },
-  { code: 'nl', name: 'Nederlands (Dutch)', flag: '🇳🇱' },
-  { code: 'pl', name: 'Polski (Polish)', flag: '🇵🇱' },
-  { code: 'sv', name: 'Svenska (Swedish)', flag: '🇸🇪' },
-  { code: 'tl', name: 'Tagalog (Filipino)', flag: '🇵🇭' },
-  { code: 'uk', name: 'Українська (Ukrainian)', flag: '🇺🇦' },
-  { code: 'el', name: 'Ελληνικά (Greek)', flag: '🇬🇷' },
-  { code: 'id', name: 'Bahasa Indonesia (Indonesian)', flag: '🇮🇩' },
-  { code: 'ro', name: 'Română (Romanian)', flag: '🇷🇴' },
-  { code: 'th', name: 'ไทย (Thai)', flag: '🇹🇭' },
-  { code: 'fa', name: 'فارسی (Persian)', flag: '🇮🇷' }
+  { code: 'ja', name: '日本語', flag: '🇯🇵' },
+  { code: 'ru', name: 'Русский', flag: '🇷🇺' },
+  { code: 'hi', name: 'हिन्दी', flag: '🇮🇳' },
+  { code: 'ar', name: 'العربية', flag: '🇸🇦' },
+  { code: 'ur', name: 'اردو', flag: '🇵🇰' },
+  { code: 'ko', name: '한국어', flag: '🇰🇷' },
+  { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
+  { code: 'tr', name: 'Türkçe', flag: '🇹🇷' },
+  { code: 'nl', name: 'Nederlands', flag: '🇳🇱' },
+  { code: 'pl', name: 'Polski', flag: '🇵🇱' },
+  { code: 'sv', name: 'Svenska', flag: '🇸🇪' },
+  { code: 'tl', name: 'Tagalog', flag: '🇵🇭' },
+  { code: 'uk', name: 'Українська', flag: '🇺🇦' },
+  { code: 'el', name: 'Ελληνικά', flag: '🇬🇷' },
+  { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩' },
+  { code: 'ro', name: 'Română', flag: '🇷🇴' },
+  { code: 'th', name: 'ไทย', flag: '🇹🇭' },
+  { code: 'fa', name: 'فارسی', flag: '🇮🇷' }
 ];
 
-export default function LanguageSelector() {
-  const [currentLang, setCurrentLang] = useState('en');
+interface LanguageSelectorProps {
+  currentLang: string;
+  onLanguageChange: (langCode: string) => void;
+}
+
+export default function LanguageSelector({ currentLang, onLanguageChange }: LanguageSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
-
-  useEffect(() => {
-    // Check if google translate cookie already exists
-    const getCookie = (name: string) => {
-      const value = `; ${document.cookie}`;
-      const parts = value.split(`; ${name}=`);
-      if (parts.length === 2) return parts.pop()?.split(';').shift();
-      return null;
-    };
-
-    const transCookie = getCookie('googtrans');
-    if (transCookie) {
-      const lang = transCookie.split('/').pop();
-      if (lang && SUPPORTED_LANGUAGES.some(l => l.code === lang)) {
-        setCurrentLang(lang);
-      }
-    }
-
-    // Insert Google Translate script if not present
-    if (!window.document.getElementById('google-translate-script')) {
-      const script = window.document.createElement('script');
-      script.id = 'google-translate-script';
-      script.src = '//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
-      script.async = true;
-      window.document.body.appendChild(script);
-
-      // Define initialization function
-      (window as any).googleTranslateElementInit = () => {
-        new (window as any).google.translate.TranslateElement({
-          pageLanguage: 'en',
-          includedLanguages: SUPPORTED_LANGUAGES.map(l => l.code).join(','),
-          layout: (window as any).google.translate.TranslateElement.InlineLayout.SIMPLE,
-          autoDisplay: false
-        }, 'google_translate_element');
-      };
-    }
-  }, []);
-
-  const handleLanguageChange = (langCode: string) => {
-    setCurrentLang(langCode);
-    setIsOpen(false);
-
-    // Set standard Google Translate cookies to trigger translation
-    const cookieStringValue = `/en/${langCode}`;
-    
-    // Set for both root and current domain to ensure compatibility
-    document.cookie = `googtrans=${cookieStringValue}; path=/;`;
-    document.cookie = `googtrans=${cookieStringValue}; path=/; domain=${window.location.hostname};`;
-    
-    // Reload the page to apply Google Translation instantly & cleanly
-    window.location.reload();
-  };
 
   const activeLangObj = SUPPORTED_LANGUAGES.find(l => l.code === currentLang) || SUPPORTED_LANGUAGES[0];
 
   return (
-    <div className="relative inline-block text-left z-50 custom-translator-wrapper">
-      {/* Hidden google translate container */}
-      <div id="google_translate_element" className="hidden"></div>
-
+    <div className="relative inline-block text-left z-50">
       {/* Styled Translation Trigger Button */}
       <button
         type="button"
@@ -100,7 +49,7 @@ export default function LanguageSelector() {
         id="btn-language-selector"
       >
         <Globe className="w-5 h-5 text-[#FF6B6B]" />
-        <span>Language: {activeLangObj.flag} {activeLangObj.name}</span>
+        <span>{activeLangObj.flag} {activeLangObj.name}</span>
         <ChevronDown className="w-4 h-4 text-[#1A1A1A] stroke-[3]" />
       </button>
 
@@ -114,7 +63,7 @@ export default function LanguageSelector() {
           ></div>
 
           <div 
-            className="absolute right-0 mt-3.5 w-64 bg-white border-4 border-[#1A1A1A] rounded-2xl shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] z-50 max-h-96 overflow-y-auto"
+            className="absolute right-0 mt-3.5 w-64 bg-white border-4 border-[#1A1A1A] rounded-2xl shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] z-50 max-h-96 overflow-y-auto animate-scaleIn"
             id="language-dropdown-menu"
           >
             <div className="p-3 border-b-2 border-[#1A1A1A] bg-[#FDFBF7]">
@@ -122,14 +71,17 @@ export default function LanguageSelector() {
                 Choose your cozy language:
               </span>
             </div>
-            <div className="py-1">
+            <div className="py-1 flex flex-col">
               {SUPPORTED_LANGUAGES.map((lang) => {
                 const isSelected = currentLang === lang.code;
                 return (
                   <button
                     key={lang.code}
-                    onClick={() => handleLanguageChange(lang.code)}
-                    className={`w-full text-left px-4 py-3 text-sm font-black flex items-center justify-between transition-colors border-b last:border-b-0 border-gray-100 ${
+                    onClick={() => {
+                      onLanguageChange(lang.code);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 text-sm font-black flex items-center justify-between transition-colors border-b last:border-b-0 border-gray-100 cursor-pointer ${
                       isSelected 
                         ? 'bg-[#FFD93D] text-[#1A1A1A]' 
                         : 'text-[#2D2D2D] hover:bg-[#F3F1ED]'

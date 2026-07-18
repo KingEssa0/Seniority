@@ -23,15 +23,50 @@ interface PostCardProps {
   currentUser: any;
   textSize: 'normal' | 'large' | 'huge';
   audioGuide: boolean;
+  currentLang: string;
+  onViewAccount?: (userId: string) => void;
 }
 
-export default function PostCard({ post, currentUser, textSize, audioGuide }: PostCardProps) {
+export default function PostCard({ post, currentUser, textSize, audioGuide, currentLang, onViewAccount }: PostCardProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [isReadingPost, setIsReadingPost] = useState(false);
   const [readingCommentId, setReadingCommentId] = useState<string | null>(null);
+
+  // Translation States
+  const [translatedText, setTranslatedText] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showTranslated, setShowTranslated] = useState(false);
+
+  const handleTranslate = async () => {
+    if (translatedText) {
+      setShowTranslated(!showTranslated);
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: post.content,
+          targetLanguage: currentLang
+        })
+      });
+      const data = await response.json();
+      if (data.translatedText) {
+        setTranslatedText(data.translatedText);
+        setShowTranslated(true);
+      }
+    } catch (err) {
+      console.error("Translation error:", err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   // Subscribing to comments in real-time
   useEffect(() => {
@@ -92,7 +127,8 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
     } else {
       setIsReadingPost(true);
       setReadingCommentId(null);
-      const textToSpeak = `Post shared by ${post.userName} under topic ${post.category}. Post says: ${post.content}`;
+      const textToRead = showTranslated && translatedText ? translatedText : post.content;
+      const textToSpeak = `Post shared by ${post.userName}. Post says: ${textToRead}`;
       speakText(textToSpeak, () => {
         setIsReadingPost(false);
       });
@@ -212,15 +248,19 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
     <div className="bg-white rounded-3xl p-6 border-4 border-[#1A1A1A] shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] hover:translate-y-[-2px] hover:shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] transition-all mb-6">
       {/* Post Top Card Row */}
       <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
+        <div 
+          className="flex items-center gap-3 cursor-pointer hover:opacity-85 group transition-all"
+          onClick={() => onViewAccount?.(post.userId)}
+          title={`Click to view ${post.userName || 'this member'}'s club profile`}
+        >
           <img
             src={post.userPhoto}
             alt={post.userName}
-            className="w-14 h-14 rounded-full border-3 border-[#1A1A1A] object-cover"
+            className="w-14 h-14 rounded-full border-3 border-[#1A1A1A] object-cover group-hover:scale-105 transition-transform"
             referrerPolicy="no-referrer"
           />
           <div>
-            <h4 className={`${getTextSizeClass('text-lg')} font-black text-[#1A1A1A]`}>
+            <h4 className={`${getTextSizeClass('text-lg')} font-black text-[#1A1A1A] group-hover:underline`}>
               {post.userName}
             </h4>
             <div className="flex items-center gap-2 mt-0.5">
@@ -240,29 +280,51 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
           </div>
         </div>
 
-        {/* Read Aloud Trigger for the blind/tired seniors */}
-        <button
-          onClick={handleReadAloud}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-black border-3 transition-all cursor-pointer shadow-[2px_2px_0px_0px_#1A1A1A] ${
-            isReadingPost
-              ? 'bg-[#FFD93D] border-[#1A1A1A] text-[#1A1A1A]'
-              : 'bg-[#F3F1ED] border-[#1A1A1A] text-[#1A1A1A] hover:bg-white'
-          }`}
-          title="Read post aloud"
-          id={`btn-read-aloud-${post.id}`}
-        >
-          {isReadingPost ? (
-            <>
-              <Volume2 className="w-5 h-5 text-[#FF6B6B]" />
-              <span className="text-xs font-black">Reading... (Tap to Stop)</span>
-            </>
-          ) : (
-            <>
-              <Volume2 className="w-5 h-5 text-[#FF6B6B]" />
-              <span className="text-xs font-black">Listen 🔊</span>
-            </>
+        <div className="flex items-center gap-2">
+          {/* Read Aloud Trigger for the blind/tired seniors */}
+          <button
+            onClick={handleReadAloud}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-black border-3 transition-all cursor-pointer shadow-[2px_2px_0px_0px_#1A1A1A] ${
+              isReadingPost
+                ? 'bg-[#FFD93D] border-[#1A1A1A] text-[#1A1A1A]'
+                : 'bg-[#F3F1ED] border-[#1A1A1A] text-[#1A1A1A] hover:bg-white'
+            }`}
+            title="Read post aloud"
+            id={`btn-read-aloud-${post.id}`}
+          >
+            {isReadingPost ? (
+              <>
+                <Volume2 className="w-5 h-5 text-[#FF6B6B]" />
+                <span className="text-xs font-black">Reading... (Stop)</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-5 h-5 text-[#FF6B6B]" />
+                <span className="text-xs font-black">Listen 🔊</span>
+              </>
+            )}
+          </button>
+
+          {/* Elegant On-Demand Translate Button */}
+          {currentLang !== 'en' && (
+            <button
+              onClick={handleTranslate}
+              disabled={isTranslating}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-black border-3 transition-all cursor-pointer shadow-[2px_2px_0px_0px_#1A1A1A] ${
+                showTranslated
+                  ? 'bg-[#FFD93D] border-[#1A1A1A] text-[#1A1A1A] scale-105'
+                  : 'bg-white border-[#1A1A1A] text-[#1A1A1A] hover:bg-[#F3F1ED]'
+              }`}
+              title="Translate Story"
+              id={`btn-translate-${post.id}`}
+            >
+              <span className="text-sm">🌍</span>
+              <span className="text-xs font-black">
+                {isTranslating ? 'Translating...' : showTranslated ? 'Original 🇺🇸' : 'Translate 🌍'}
+              </span>
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Post Body Content */}
@@ -284,9 +346,16 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
               code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-sm">{children}</code>
             }}
           >
-            {post.content}
+            {showTranslated && translatedText ? translatedText : post.content}
           </ReactMarkdown>
         </div>
+
+        {showTranslated && translatedText && (
+          <div className="mt-2 text-xs font-bold text-[#FF6B6B] flex items-center gap-1.5 bg-[#4ECDC4]/10 border-2 border-dashed border-[#4ECDC4] px-3 py-1.5 rounded-xl w-fit">
+            <span>🌸</span>
+            <span>Warm translation by Gemini</span>
+          </div>
+        )}
 
         {post.imageUrl && (
           <div className="mt-4 rounded-2xl overflow-hidden max-h-[350px] border-3 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">

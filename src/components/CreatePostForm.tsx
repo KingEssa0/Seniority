@@ -3,14 +3,16 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { CURATED_IMAGES } from '../utils';
 import { Mic, MicOff, Image, Send, HelpCircle, AlertCircle, Smile } from 'lucide-react';
+import { UI_TRANSLATIONS } from '../translations';
 
 interface CreatePostFormProps {
   user: any;
   textSize: 'normal' | 'large' | 'huge';
   onPostCreated: () => void;
+  currentLang: string;
 }
 
-export default function CreatePostForm({ user, textSize, onPostCreated }: CreatePostFormProps) {
+export default function CreatePostForm({ user, textSize, onPostCreated, currentLang }: CreatePostFormProps) {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('General');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -148,14 +150,15 @@ export default function CreatePostForm({ user, textSize, onPostCreated }: Create
     }
   };
 
+  const t = (key: string): string => {
+    return UI_TRANSLATIONS[currentLang]?.[key] || UI_TRANSLATIONS['en']?.[key] || key;
+  };
+
   const categories = [
-    { value: 'General', label: '🌸 General / Chat' },
-    { value: 'Memories', label: '📸 Memory Lane' },
-    { value: 'Gardening', label: '🏡 Gardening & Plants' },
-    { value: 'Cooking', label: '🍳 Cooking & Recipes' },
-    { value: 'Crafts', label: '🎨 Crafts & Knitting' },
-    { value: 'Pets', label: '🐶 Pet Lovers' },
-    { value: 'Help', label: '❓ Seeking Advice' },
+    { value: 'General', label: `🌸 ${t('topicChat')}` },
+    { value: 'Memories', label: `📸 ${t('topicMemory')}` },
+    { value: 'Gardening', label: `🏡 ${t('topicGardening')}` },
+    { value: 'Help', label: `❓ ${t('topicHelp')}` },
   ];
 
   return (
@@ -171,7 +174,7 @@ export default function CreatePostForm({ user, textSize, onPostCreated }: Create
           />
           <div>
             <h3 className={`${getTextSizeClass('text-lg')} font-black text-[#1A1A1A]`}>
-              What's on your mind today, {user.displayName?.split(' ')[0]}?
+              {t('whatsOnMind')}
             </h3>
             <p className="text-sm text-[#7D7870] font-bold">Share your stories, wisdom, or photos!</p>
           </div>
@@ -182,7 +185,7 @@ export default function CreatePostForm({ user, textSize, onPostCreated }: Create
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Type your message here, or click the big 'Speak' button to talk to the screen..."
+            placeholder={t('typeHerePrompt')}
             className={`w-full min-h-[140px] p-4 bg-white border-3 border-[#1A1A1A] rounded-2xl outline-none transition-all resize-none text-[#1A1A1A] leading-relaxed font-bold focus:border-[#4ECDC4] ${getTextSizeClass(
               'text-lg'
             )}`}
@@ -205,12 +208,12 @@ export default function CreatePostForm({ user, textSize, onPostCreated }: Create
             {isListening ? (
               <>
                 <Mic className="w-5 h-5 stroke-[2.5]" />
-                <span className="text-sm font-black">Listening... (Tap to stop)</span>
+                <span className="text-sm font-black">{t('listening')}</span>
               </>
             ) : (
               <>
                 <Mic className="w-5 h-5 text-[#1A1A1A] stroke-[2.5]" />
-                <span className="text-sm font-black">Speak Your Post 🎙️</span>
+                <span className="text-sm font-black">{t('tapSpeak')} 🎙️</span>
               </>
             )}
           </button>
@@ -281,7 +284,7 @@ export default function CreatePostForm({ user, textSize, onPostCreated }: Create
               ) : (
                 <>
                   <Send className="w-5 h-5 stroke-[2.5]" />
-                  <span>Share with Club 🌸</span>
+                  <span>{t('postStory')}</span>
                 </>
               )}
             </button>

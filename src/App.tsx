@@ -4,6 +4,7 @@ import { collection, query, orderBy, onSnapshot, getDocs, addDoc, doc, getDoc, s
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { Post, UserProfile } from './types';
 import { INSPIRING_QUOTES, speakText, stopSpeaking } from './utils';
+import { UI_TRANSLATIONS } from './translations';
 
 // Components
 import Login from './components/Login';
@@ -13,6 +14,7 @@ import CreatePostForm from './components/CreatePostForm';
 import PostCard from './components/PostCard';
 import GoldenFriends from './components/GoldenFriends';
 import ActivityHub from './components/ActivityHub';
+import AccountViewModal from './components/AccountViewModal';
 
 // Icons
 import { Compass, Sparkles, BookOpen, Users, Star, MessageCircle, Info } from 'lucide-react';
@@ -21,6 +23,22 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Translation States
+  const [currentLang, setCurrentLang] = useState<string>(() => {
+    return localStorage.getItem('seniority_lang') || 'en';
+  });
+
+  const handleLanguageChange = (langCode: string) => {
+    setCurrentLang(langCode);
+    localStorage.setItem('seniority_lang', langCode);
+    const greetingMsg = UI_TRANSLATIONS[langCode]?.greetings || "Hello, friend!";
+    speakText(greetingMsg);
+  };
+
+  const t = (key: string): string => {
+    return UI_TRANSLATIONS[currentLang]?.[key] || UI_TRANSLATIONS['en']?.[key] || key;
+  };
 
   // Accessibility States
   const [textSize, setTextSize] = useState<'normal' | 'large' | 'huge'>(() => {
@@ -34,6 +52,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'timeline' | 'friends' | 'memory-lane' | 'activity-hub'>('timeline');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Account Viewing State
+  const [selectedAccountUid, setSelectedAccountUid] = useState<string | null>(null);
 
   // Feed & Database States
   const [posts, setPosts] = useState<Post[]>([]);
@@ -228,246 +249,112 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#1A1A1A] font-sans transition-all">
-      {/* Top Accessibility Bar */}
-      <AccessibilityBar
-        textSize={textSize}
-        setTextSize={setTextSize}
-        audioGuide={audioGuide}
-        setAudioGuide={setAudioGuide}
-        onShowTutorial={() => setShowTutorial(true)}
-      />
+      {/* Sticky Top Header Area containing both bars to prevent overlapping */}
+      <div className="sticky top-0 z-40 bg-[#FDFBF7] shadow-sm">
+        {/* Top Accessibility Bar */}
+        <AccessibilityBar
+          textSize={textSize}
+          setTextSize={setTextSize}
+          audioGuide={audioGuide}
+          setAudioGuide={setAudioGuide}
+          onShowTutorial={() => setShowTutorial(true)}
+          currentLang={currentLang}
+          onLanguageChange={handleLanguageChange}
+        />
 
-      {/* Main App Branding Header */}
-      <Header
-        user={user}
-        isDemo={isDemo}
-        onLogout={handleLogout}
-        textSize={textSize}
-        quote={quote}
-      />
+        {/* Main App Branding Header */}
+        <Header
+          user={user}
+          isDemo={isDemo}
+          onLogout={handleLogout}
+          textSize={textSize}
+          quote={quote}
+          currentLang={currentLang}
+        />
+      </div>
 
       {/* Main Container Grid */}
       <main className="max-w-6xl mx-auto px-4 py-6">
         
-        {/* Navigation Tabs bar */}
-        <div className="flex flex-wrap overflow-x-auto gap-3 mb-8 pb-2 border-b-4 border-[#1A1A1A]" id="nav-tabs">
-          <button
-            onClick={() => setActiveTab('timeline')}
-            className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
-              activeTab === 'timeline'
-                ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_#1A1A1A] scale-105'
-                : 'bg-white text-[#1A1A1A] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#F3F1ED]'
-            }`}
-            id="tab-timeline"
-          >
-            <Compass className="w-5 h-5 stroke-[2.5]" />
-            <span>🏡 Community Square</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('friends')}
-            className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
-              activeTab === 'friends'
-                ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_#1A1A1A] scale-105'
-                : 'bg-white text-[#1A1A1A] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#F3F1ED]'
-            }`}
-            id="tab-friends"
-          >
-            <Compass className="w-5 h-5 stroke-[2.5] animate-spin-slow" />
-            <span>👥 Golden Friends</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('memory-lane')}
-            className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
-              activeTab === 'memory-lane'
-                ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_#1A1A1A] scale-105'
-                : 'bg-white text-[#1A1A1A] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#F3F1ED]'
-            }`}
-            id="tab-memory-lane"
-          >
-            <BookOpen className="w-5 h-5 stroke-[2.5]" />
-            <span>📸 Memory Lane</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('activity-hub')}
-            className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
-              activeTab === 'activity-hub'
-                ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_#1A1A1A] scale-105'
-                : 'bg-white text-[#1A1A1A] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#F3F1ED]'
-            }`}
-            id="tab-activity-hub"
-          >
-            <Star className="w-5 h-5 stroke-[2.5] text-[#FFD93D] fill-[#FFD93D]" />
-            <span>🎯 Golden Activity Hub</span>
-          </button>
-        </div>
-
         {/* Outer Layout wrapper */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
           {/* Main Feed panel - 8 Columns */}
           <div className="lg:col-span-8 space-y-6">
             
-            {/* 1. COMMUNITY SQUARE (Timeline) View */}
-            {activeTab === 'timeline' && (
-              <>
-                {/* Create post form */}
-                <CreatePostForm
-                  user={user}
-                  textSize={textSize}
-                  onPostCreated={() => {
-                    // Force quote renewal or nice visual cheer
-                    const quotesList = INSPIRING_QUOTES.filter(q => q !== quote);
-                    setQuote(quotesList[Math.floor(Math.random() * quotesList.length)]);
-                  }}
+            {/* Create post form */}
+            <CreatePostForm
+              user={user}
+              textSize={textSize}
+              currentLang={currentLang}
+              onPostCreated={() => {
+                const quotesList = INSPIRING_QUOTES.filter(q => q !== quote);
+                setQuote(quotesList[Math.floor(Math.random() * quotesList.length)]);
+              }}
+            />
+
+            {/* Timeline Filters and Search */}
+            <div className="bg-white rounded-3xl p-5 border-4 border-[#1A1A1A] shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] space-y-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <h3 className={`${getTextSizeClass('text-base')} font-black text-[#1A1A1A]`}>
+                  🏡 {t('filterTitle')}
+                </h3>
+                
+                {/* Search Input bar */}
+                <input
+                  type="text"
+                  placeholder={t('searchPlaceholder')}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-4 py-2.5 bg-white border-3 border-[#1A1A1A] rounded-xl font-bold outline-none text-sm w-full sm:max-w-xs focus:border-[#4ECDC4] text-[#1A1A1A]"
+                  id="input-search-posts"
                 />
-
-                {/* Timeline Filters and Search */}
-                <div className="bg-white rounded-3xl p-5 border-4 border-[#1A1A1A] shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] space-y-4">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                    <h3 className={`${getTextSizeClass('text-base')} font-black text-[#1A1A1A]`}>
-                      🏡 Filter Stories:
-                    </h3>
-                    
-                    {/* Search Input bar */}
-                    <input
-                      type="text"
-                      placeholder="🔍 Search stories, names, hobbies..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="px-4 py-2.5 bg-white border-3 border-[#1A1A1A] rounded-xl font-bold outline-none text-sm w-full sm:max-w-xs focus:border-[#4ECDC4] text-[#1A1A1A]"
-                      id="input-search-posts"
-                    />
-                  </div>
-
-                  {/* Horizontal Category quick buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    {['All', 'General', 'Memories', 'Gardening', 'Cooking', 'Crafts', 'Pets', 'Help'].map((cat) => (
-                      <button
-                        key={cat}
-                        onClick={() => setCategoryFilter(cat)}
-                        className={`px-3.5 py-1.5 rounded-xl text-xs font-black border-3 transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:translate-y-0.5 hover:translate-x-0.5 hover:shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] ${
-                          categoryFilter === cat
-                            ? 'bg-[#FFD93D] border-[#1A1A1A] text-[#1A1A1A]'
-                            : 'bg-white border-[#EAE6DF] text-[#1A1A1A] hover:border-[#1A1A1A]'
-                        }`}
-                        id={`btn-filter-category-${cat}`}
-                      >
-                        {cat === 'All' && '🌎 All Topics'}
-                        {cat === 'General' && '🌸 Chat'}
-                        {cat === 'Memories' && '📸 Memories'}
-                        {cat === 'Gardening' && '🏡 Gardening'}
-                        {cat === 'Cooking' && '🍳 Recipes'}
-                        {cat === 'Crafts' && '🎨 Crafts'}
-                        {cat === 'Pets' && '🐶 Pets'}
-                        {cat === 'Help' && '❓ Seeking Advice'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Post Cards Feed */}
-                <div className="space-y-4">
-                  {filteredPosts.length === 0 ? (
-                    <div className="bg-white rounded-3xl p-8 border-4 border-[#1A1A1A] shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] text-center text-gray-500">
-                      <p className="text-lg font-black text-[#1A1A1A] mb-2">No posts found.</p>
-                      <p className="text-sm font-bold text-[#7D7870]">Be the first to share a lovely update under this category! Click the 'Speak' button to write effortlessly.</p>
-                    </div>
-                  ) : (
-                    filteredPosts.map((post) => (
-                      <PostCard
-                        key={post.id}
-                        post={post}
-                        currentUser={user}
-                        textSize={textSize}
-                        audioGuide={audioGuide}
-                      />
-                    ))
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* 3. FRIENDS View */}
-            {activeTab === 'friends' && (
-              <GoldenFriends currentUser={user} textSize={textSize} />
-            )}
-
-            {/* 4. MEMORY LANE View (Nostalgic Photos and autobiographies) */}
-            {activeTab === 'memory-lane' && (
-              <div className="bg-[#FFD93D]/10 rounded-3xl p-6 border-4 border-[#1A1A1A] shadow-[8px_8px_0px_0px_rgba(26,26,26,1)]">
-                <div className="flex items-center gap-3 mb-6">
-                  <span className="text-3xl animate-bounce">📸</span>
-                  <div>
-                    <h2 className={`${getTextSizeClass('text-xl')} font-black text-[#1A1A1A]`}>
-                      The Memory Lane Gallery
-                    </h2>
-                    <p className="text-sm text-[#7D7870] font-bold">
-                      Flip through lovely retro photos, memories, and heartwarming life stories.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Grid layout of memories */}
-                {memoryLanePosts.length === 0 ? (
-                  <p className="text-[#7D7870] font-black italic text-center py-10 bg-white rounded-2xl border-3 border-dashed border-[#1A1A1A] shadow-[3px_3px_0px_0px_#1A1A1A]">
-                    Memory Lane is currently quiet. Write a new post and choose "📸 Memory Lane" topic to pin it here forever!
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    {memoryLanePosts.map((post) => (
-                      <div key={post.id} className="bg-white rounded-2xl p-4.5 border-3 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col justify-between hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] transition-all">
-                        <div>
-                          <div className="flex items-center gap-2 mb-3">
-                            <img src={post.userPhoto} alt={post.userName} className="w-8 h-8 rounded-full border-2 border-[#1A1A1A] object-cover" />
-                            <div>
-                              <h4 className="font-black text-[#1A1A1A] text-xs">{post.userName}</h4>
-                              <p className="text-[10px] text-[#7D7870] font-bold">Memory Keeper</p>
-                            </div>
-                          </div>
-                          
-                          {post.imageUrl && (
-                            <div className="rounded-xl overflow-hidden mb-3 aspect-video border-2 border-[#1A1A1A]">
-                              <img src={post.imageUrl} alt="Memory" className="w-full h-full object-cover" />
-                            </div>
-                          )}
-
-                          <p className={`text-[#1A1A1A] italic font-bold leading-relaxed mb-3 line-clamp-4 ${getTextSizeClass('text-sm')}`}>
-                            "{post.content}"
-                          </p>
-                        </div>
-
-                        <div className="border-t-2 border-[#1A1A1A] pt-3 flex items-center justify-between">
-                          <button
-                            onClick={() => {
-                              speakText(`Memory shared by ${post.userName}: ${post.content}`);
-                            }}
-                            className="text-xs font-black text-[#1A1A1A] bg-[#FFD93D] border-2 border-[#1A1A1A] hover:bg-[#ffe066] px-3 py-1 rounded-lg flex items-center gap-1 transition-all shadow-[2px_2px_0px_0px_#1A1A1A]"
-                          >
-                            Listen 🔊
-                          </button>
-                          <span className="text-[10px] font-black text-[#1A1A1A] bg-[#4ECDC4] border-2 border-[#1A1A1A] px-2.5 py-0.5 rounded-full">
-                            ❤ {post.reactions?.love?.length || 0} Loves
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
-            )}
 
-            {activeTab === 'activity-hub' && (
-              <ActivityHub
-                currentUser={user}
-                textSize={textSize}
-                onPostCreated={() => {
-                  // Reset or swap quote on success
-                }}
-              />
-            )}
+              {/* Horizontal Category quick buttons */}
+              <div className="flex flex-wrap gap-2">
+                {['All', 'General', 'Memories', 'Gardening', 'Help'].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black border-3 transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:translate-y-0.5 hover:translate-x-0.5 hover:shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] ${
+                      categoryFilter === cat
+                        ? 'bg-[#FFD93D] border-[#1A1A1A] text-[#1A1A1A]'
+                        : 'bg-white border-[#EAE6DF] text-[#1A1A1A] hover:border-[#1A1A1A]'
+                    }`}
+                    id={`btn-filter-category-${cat}`}
+                  >
+                    {cat === 'All' && `🌎 ${t('topicAll')}`}
+                    {cat === 'General' && `🌸 ${t('topicChat')}`}
+                    {cat === 'Memories' && `📸 ${t('topicMemory')}`}
+                    {cat === 'Gardening' && `🏡 ${t('topicGardening')}`}
+                    {cat === 'Help' && `❓ ${t('topicHelp')}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Post Cards Feed */}
+            <div className="space-y-4">
+              {filteredPosts.length === 0 ? (
+                <div className="bg-white rounded-3xl p-8 border-4 border-[#1A1A1A] shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] text-center text-gray-500">
+                  <p className="text-lg font-black text-[#1A1A1A] mb-2">{t('noStories')}</p>
+                  <p className="text-sm font-bold text-[#7D7870]">{t('beFirstStory')}</p>
+                </div>
+              ) : (
+                filteredPosts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    currentUser={user}
+                    textSize={textSize}
+                    audioGuide={audioGuide}
+                    currentLang={currentLang}
+                    onViewAccount={(uid) => setSelectedAccountUid(uid)}
+                  />
+                ))
+              )}
+            </div>
 
           </div>
 
@@ -481,31 +368,33 @@ export default function App() {
                 <div className="flex items-center gap-1 mb-2">
                   <Sparkles className="w-5 h-5 text-[#FFD93D] fill-[#FFD93D] stroke-[2]" />
                   <span className="text-xs uppercase font-black tracking-widest text-[#FFD93D]">
-                    Uplifting Daily Cheer
+                    {t('cheerTitle')}
                   </span>
                 </div>
                 <h4 className="text-2xl font-black mb-3 leading-snug">
-                  Hello, {user.displayName?.split(' ')[0]}! 🌟
+                  {t('greetings')} {user.displayName?.split(' ')[0]}! 🌟
                 </h4>
                 <p className="text-white font-bold leading-relaxed text-sm">
-                  "Beautiful connections make the heart grow younger. Take a moment today to wave hello to a new club friend or share a sweet memory from your childhood!"
+                  "{t('cheerText')}"
                 </p>
                 <div className="mt-4 border-t-2 border-white/20 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-white font-black">
                   <div className="flex flex-col">
-                    <span className="text-[#FFD93D]">📅 {currentDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                    <span className="text-white/85 font-mono mt-0.5">⏰ {currentDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-[#FFD93D]">📅 {currentDate.toLocaleDateString(currentLang, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    <span className="text-white/85 font-mono mt-0.5">⏰ {currentDate.toLocaleTimeString(currentLang, { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <span className="bg-[#4ECDC4] border-2 border-[#1A1A1A] text-[#1A1A1A] px-2 py-0.5 rounded-full self-start sm:self-auto">524 online 🟢</span>
+                  <span className="bg-[#4ECDC4] border-2 border-[#1A1A1A] text-[#1A1A1A] px-2.5 py-0.5 rounded-full self-start sm:self-auto">524 {t('activeOnline')} 🟢</span>
                 </div>
               </div>
             </div>
 
             {/* Golden Friends Mini Column */}
-            {activeTab !== 'friends' && (
-              <div className="max-h-[450px] overflow-y-auto rounded-3xl border-4 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all">
-                <GoldenFriends currentUser={user} textSize={textSize} />
-              </div>
-            )}
+            <GoldenFriends
+              currentUser={user}
+              textSize={textSize}
+              isSidebar={true}
+              currentLang={currentLang}
+              onViewAccount={(uid) => setSelectedAccountUid(uid)}
+            />
 
           </div>
 
@@ -513,9 +402,9 @@ export default function App() {
 
       </main>
 
-      {/* 2026 Copyright block */}
+      {/* Footer copyright */}
       <footer className="bg-[#F3F1ED] border-t-4 border-[#1A1A1A] py-8 text-center text-[#1A1A1A] font-bold text-sm mt-12">
-        <p className="mb-2">🌸 Seniority Seniors Social Club • Built for Comfort & Connection</p>
+        <p className="mb-2">🌸 {t('appTitle')} Seniors Social Club • Built for Comfort & Connection</p>
         <p className="text-xs text-[#7D7870] font-black">Connecting our golden generation with security, comfort, and absolute peace of mind.</p>
       </footer>
 
@@ -566,6 +455,17 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Account View Modal */}
+      {selectedAccountUid && (
+        <AccountViewModal
+          userId={selectedAccountUid}
+          currentUser={user}
+          onClose={() => setSelectedAccountUid(null)}
+          textSize={textSize}
+          currentLang={currentLang}
+        />
       )}
     </div>
   );
