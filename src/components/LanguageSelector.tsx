@@ -88,7 +88,7 @@ export default function LanguageSelector() {
   const activeLangObj = SUPPORTED_LANGUAGES.find(l => l.code === currentLang) || SUPPORTED_LANGUAGES[0];
 
   return (
-    <div className="relative inline-block text-left z-50">
+    <div className="relative inline-block text-left z-50 custom-translator-wrapper">
       {/* Hidden google translate container */}
       <div id="google_translate_element" className="hidden"></div>
 

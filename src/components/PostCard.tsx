@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
   doc,
@@ -36,15 +37,25 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
   useEffect(() => {
     let unsubscribe = () => {};
     if (showComments) {
+      // Query without orderBy('createdAt') to avoid index requirements in Firestore
       const q = query(
         collection(db, 'comments'),
-        where('postId', '==', post.id),
-        orderBy('createdAt', 'asc')
+        where('postId', '==', post.id)
       );
       unsubscribe = onSnapshot(q, (snapshot) => {
         const list: Comment[] = [];
         snapshot.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() } as Comment);
+        });
+        // Sort comments by createdAt in memory
+        list.sort((a, b) => {
+          const getMs = (val: any) => {
+            if (!val) return 0;
+            if (typeof val.toDate === 'function') return val.toDate().getTime();
+            if (val.seconds !== undefined) return val.seconds * 1000 + (val.nanoseconds || 0) / 1000000;
+            return new Date(val).getTime() || 0;
+          };
+          return getMs(a.createdAt) - getMs(b.createdAt);
         });
         setComments(list);
       }, (error) => {
@@ -256,9 +267,26 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
 
       {/* Post Body Content */}
       <div className="mb-4">
-        <p className={`text-[#1A1A1A] font-bold leading-relaxed break-words whitespace-pre-wrap ${getTextSizeClass('text-lg')}`} id={`post-content-${post.id}`}>
-          {post.content}
-        </p>
+        <div className={`text-[#1A1A1A] font-bold leading-relaxed break-words whitespace-pre-wrap ${getTextSizeClass('text-lg')}`} id={`post-content-${post.id}`}>
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p className="mb-2">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>,
+              li: ({ children }) => <li className="mb-0.5">{children}</li>,
+              strong: ({ children }) => <strong className="font-extrabold text-[#FF6B6B]">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+              a: ({ href, children }) => <a href={href} className="text-[#4ECDC4] underline font-black hover:text-[#3db8af]" target="_blank" rel="noopener noreferrer">{children}</a>,
+              h1: ({ children }) => <h1 className="text-2xl font-black mb-2 mt-3 text-[#1A1A1A]">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-xl font-black mb-2 mt-3 text-[#1A1A1A]">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-lg font-black mb-1 mt-2 text-[#1A1A1A]">{children}</h3>,
+              blockquote: ({ children }) => <blockquote className="border-l-4 border-[#FFD93D] pl-4 italic my-2 bg-gray-50 p-2 rounded">{children}</blockquote>,
+              code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-sm">{children}</code>
+            }}
+          >
+            {post.content}
+          </ReactMarkdown>
+        </div>
 
         {post.imageUrl && (
           <div className="mt-4 rounded-2xl overflow-hidden max-h-[350px] border-3 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]">
@@ -414,9 +442,19 @@ export default function PostCard({ post, currentUser, textSize, audioGuide }: Po
                       )}
                     </button>
                   </div>
-                  <p className={`text-[#1A1A1A] font-bold leading-relaxed break-words ${getTextSizeClass('text-sm')}`}>
-                    {c.content}
-                  </p>
+                  <div className={`text-[#1A1A1A] font-bold leading-relaxed break-words ${getTextSizeClass('text-sm')}`}>
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => <p className="mb-1">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc pl-4 mb-1">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-4 mb-1">{children}</ol>,
+                        strong: ({ children }) => <strong className="font-extrabold text-[#FF6B6B]">{children}</strong>,
+                        a: ({ href, children }) => <a href={href} className="text-[#4ECDC4] underline font-black" target="_blank" rel="noopener noreferrer">{children}</a>
+                      }}
+                    >
+                      {c.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ))
             )}

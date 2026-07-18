@@ -11,7 +11,6 @@ import AccessibilityBar from './components/AccessibilityBar';
 import Header from './components/Header';
 import CreatePostForm from './components/CreatePostForm';
 import PostCard from './components/PostCard';
-import InterestCircles from './components/InterestCircles';
 import GoldenFriends from './components/GoldenFriends';
 import ActivityHub from './components/ActivityHub';
 
@@ -32,7 +31,7 @@ export default function App() {
   });
 
   // Navigation & Filtering
-  const [activeTab, setActiveTab] = useState<'timeline' | 'circles' | 'friends' | 'memory-lane' | 'activity-hub'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'friends' | 'memory-lane' | 'activity-hub'>('timeline');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -40,6 +39,16 @@ export default function App() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [quote, setQuote] = useState('');
   const [showTutorial, setShowTutorial] = useState(false);
+
+  // Real-time Date and Clock State
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Sync Accessibility selections to localStorage
   useEffect(() => {
@@ -256,19 +265,6 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setActiveTab('circles')}
-            className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
-              activeTab === 'circles'
-                ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_#1A1A1A] scale-105'
-                : 'bg-white text-[#1A1A1A] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#F3F1ED]'
-            }`}
-            id="tab-circles"
-          >
-            <Users className="w-5 h-5 stroke-[2.5]" />
-            <span>🌸 My Interest Circles</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('friends')}
             className={`flex items-center gap-2 px-6 py-3.5 font-black text-base sm:text-lg rounded-xl border-3 border-[#1A1A1A] transition-all cursor-pointer flex-shrink-0 ${
               activeTab === 'friends'
@@ -394,11 +390,6 @@ export default function App() {
               </>
             )}
 
-            {/* 2. CIRCLES View */}
-            {activeTab === 'circles' && (
-              <InterestCircles textSize={textSize} />
-            )}
-
             {/* 3. FRIENDS View */}
             {activeTab === 'friends' && (
               <GoldenFriends currentUser={user} textSize={textSize} />
@@ -499,23 +490,19 @@ export default function App() {
                 <p className="text-white font-bold leading-relaxed text-sm">
                   "Beautiful connections make the heart grow younger. Take a moment today to wave hello to a new club friend or share a sweet memory from your childhood!"
                 </p>
-                <div className="mt-4 border-t-2 border-white/20 pt-3 flex justify-between items-center text-xs text-white font-black">
-                  <span>Current Date: July 2026 📅</span>
-                  <span className="bg-[#4ECDC4] border-2 border-[#1A1A1A] text-[#1A1A1A] px-2 py-0.5 rounded-full">524 online 🟢</span>
+                <div className="mt-4 border-t-2 border-white/20 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-white font-black">
+                  <div className="flex flex-col">
+                    <span className="text-[#FFD93D]">📅 {currentDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    <span className="text-white/85 font-mono mt-0.5">⏰ {currentDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <span className="bg-[#4ECDC4] border-2 border-[#1A1A1A] text-[#1A1A1A] px-2 py-0.5 rounded-full self-start sm:self-auto">524 online 🟢</span>
                 </div>
               </div>
             </div>
 
-            {/* Interest Circles Mini Column */}
-            {activeTab !== 'circles' && (
-              <div className="max-h-[400px] overflow-hidden rounded-3xl border-4 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all">
-                <InterestCircles textSize={textSize} />
-              </div>
-            )}
-
             {/* Golden Friends Mini Column */}
             {activeTab !== 'friends' && (
-              <div className="max-h-[400px] overflow-hidden rounded-3xl border-4 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all">
+              <div className="max-h-[450px] overflow-y-auto rounded-3xl border-4 border-[#1A1A1A] shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all">
                 <GoldenFriends currentUser={user} textSize={textSize} />
               </div>
             )}
